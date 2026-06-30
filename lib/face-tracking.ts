@@ -31,9 +31,12 @@ export interface FaceTrackPoint {
  * Amostra o vídeo a cada `intervalSec` segundos dentro do intervalo [startTime, endTime],
  * roda detecção de rosto em cada frame, e retorna a posição horizontal central do rosto
  * principal ao longo do tempo. Usado para gerar um crop dinâmico que "segue" quem fala.
+ *
+ * Aceita um File (cria object URL internamente) ou diretamente uma URL de vídeo
+ * (ex: stream do Agente Local), para funcionar com as duas fontes de vídeo.
  */
 export async function trackFaces(
-  videoFile: File,
+  videoSource: File | string,
   startTime: number,
   endTime: number,
   onProgress?: (p: number) => void,
@@ -44,7 +47,9 @@ export async function trackFaces(
   const video = document.createElement('video')
   video.muted = true
   video.playsInline = true
-  video.src = URL.createObjectURL(videoFile)
+  video.crossOrigin = 'anonymous'
+  const isFile = videoSource instanceof File
+  video.src = isFile ? URL.createObjectURL(videoSource) : videoSource
 
   await new Promise<void>((resolve, reject) => {
     video.onloadedmetadata = () => resolve()
@@ -85,8 +90,18 @@ export async function trackFaces(
     onProgress?.(Math.round((i / steps) * 100))
   }
 
-  URL.revokeObjectURL(video.src)
+  if (isFile) URL.revokeObjectURL(video.src)
   return smoothTrack(points)
+}
+
+/**
+ * Determina de que lado do quadro o rosto aparece com mais frequência —
+ * usado para orientar o Split Screen automaticamente (rosto sempre em cima).
+ */
+export function detectFaceSide(track: FaceTrackPoint[]): 'left' | 'right' {
+  if (track.length === 0) return 'left'
+  const avgX = track.reduce((sum, p) => sum + p.x, 0) / track.length
+  return avgX <= 0.5 ? 'left' : 'right'
 }
 
 function seekTo(video: HTMLVideoElement, t: number): Promise<void> {

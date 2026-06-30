@@ -57,6 +57,7 @@ export async function cutClipLocal(params: {
   width: number
   height: number
   outputName: string
+  faceSide?: 'left' | 'right'
 }): Promise<{ outputPath: string; outputDir: string }> {
   const res = await fetch(`${HELPER_URL}/cut-clip`, {
     method: 'POST',

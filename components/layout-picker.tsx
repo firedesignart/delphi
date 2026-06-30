@@ -1,11 +1,12 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { X, Download, Loader2, Music, Zap, Type, ScanFace, Sparkle } from 'lucide-react'
 import type { Clip } from '@/types'
 import { cutVideoClip, type CaptionStyleId, type CaptionPosition } from '@/lib/ffmpeg'
-import { trackFaces, type FaceTrackPoint } from '@/lib/face-tracking'
+import { trackFaces, detectFaceSide, type FaceTrackPoint } from '@/lib/face-tracking'
 import { getDelphiWatermarkPng } from '@/lib/watermark'
-import { cutClipLocal } from '@/lib/local-helper'
+import { cutClipLocal, localStreamUrl } from '@/lib/local-helper'
+import { FormatPreview } from './format-preview'
 import { formatDuration, cn } from '@/lib/utils'
 
 const CAPTION_STYLES: { id: CaptionStyleId; label: string; preview: string }[] = [
@@ -86,7 +87,20 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
   const [progress, setProgress] = useState(0)
   const [stage, setStage] = useState<'tracking' | 'exporting'>('exporting')
   const [localSuccess, setLocalSuccess] = useState<string | null>(null)
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (localFilename) {
+      setPreviewSrc(localStreamUrl(localFilename))
+      return
+    }
+    if (videoFile) {
+      const url = URL.createObjectURL(videoFile)
+      setPreviewSrc(url)
+      return () => URL.revokeObjectURL(url)
+    }
+  }, [videoFile, localFilename])
 
   const isVertical = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '1:1'
   const availableLayouts = localFilename
@@ -103,6 +117,14 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
 
       // Modo Agente Local: corte feito por FFmpeg nativo no PC do usuário, sem limite de tamanho
       if (localFilename) {
+        let faceSide: 'left' | 'right' = 'left'
+        if (layout === 'split') {
+          setStage('tracking')
+          const points = await trackFaces(localStreamUrl(localFilename), clip.startTime, clip.endTime, setProgress)
+          faceSide = detectFaceSide(points)
+          setStage('exporting')
+        }
+
         setProgress(20)
         const result = await cutClipLocal({
           filename: localFilename,
@@ -112,6 +134,7 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
           width: ratio.w,
           height: ratio.h,
           outputName: `${clip.title}_${aspectRatio.replace(':', 'x')}`,
+          faceSide,
         })
         setProgress(100)
         setLocalSuccess(result.outputDir)
@@ -137,7 +160,8 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
       }
 
       let faceTrack: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number } | undefined
-      if (layout === 'auto' || layout === 'react') {
+      let faceSide: 'left' | 'right' = 'left'
+      if (layout === 'auto' || layout === 'react' || layout === 'split') {
         setStage('tracking')
         const video = document.createElement('video')
         video.src = URL.createObjectURL(videoFile)
@@ -148,6 +172,7 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
 
         const points = await trackFaces(videoFile, clip.startTime, clip.endTime, setProgress)
         faceTrack = { points, videoWidth, videoHeight }
+        faceSide = detectFaceSide(points)
         setStage('exporting')
         setProgress(0)
       }
@@ -173,7 +198,8 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
         faceTrack,
         watermarkPng,
         captionStyle,
-        captionPosition
+        captionPosition,
+        faceSide
       )
 
       const url = URL.createObjectURL(blob)
@@ -219,6 +245,14 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
 
         <div className="px-6 py-5 space-y-5">
           <p className="text-xs text-[#888]">{formatDuration(clip.startTime)} → {formatDuration(clip.endTime)} · {formatDuration(clip.duration)}</p>
+
+          {/* Live preview do formato escolhido */}
+          <FormatPreview
+            videoSrc={previewSrc}
+            previewTime={clip.startTime + Math.min(2, clip.duration / 4)}
+            layout={layout}
+            aspectRatio={aspectRatio}
+          />
 
           {/* Aspect ratio */}
           <div>

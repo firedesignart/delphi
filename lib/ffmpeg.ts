@@ -101,15 +101,17 @@ function buildCaptionFilter(
 ): string {
   const words = transcript.split(' ').filter(Boolean)
   if (words.length === 0) return ''
-  const chunkSize = Math.max(3, Math.ceil(words.length / Math.max(1, Math.floor(clipDuration / 2.2))))
-  const fontSize = Math.round(outH * 0.045)
+  // Grupos curtos (2-3 palavras) trocando rápido — estilo legenda animada de Shorts/TikTok
+  const chunkSize = Math.max(2, Math.min(3, Math.ceil(words.length / Math.max(1, Math.floor(clipDuration / 1.1)))))
+  const baseFontSize = Math.round(outH * 0.05)
+  const popDur = 0.12 // duração do "pop" de entrada de cada grupo
 
   const yExpr = position === 'top' ? `h*0.10` : position === 'center' ? `(h-text_h)/2` : `h-h*0.18`
 
   const styleProps: Record<CaptionStyleId, string> = {
-    classic: `fontcolor=white:borderw=${Math.round(fontSize * 0.12)}:bordercolor=black`,
-    highlight: `fontcolor=#FFE600:borderw=${Math.round(fontSize * 0.14)}:bordercolor=black`,
-    box: `fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=${Math.round(fontSize * 0.25)}`,
+    classic: `fontcolor=white:borderw=${Math.round(baseFontSize * 0.13)}:bordercolor=black`,
+    highlight: `fontcolor=#FFE600:borderw=${Math.round(baseFontSize * 0.15)}:bordercolor=black`,
+    box: `fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=${Math.round(baseFontSize * 0.25)}`,
   }
 
   const parts: string[] = []
@@ -117,8 +119,10 @@ function buildCaptionFilter(
     const chunk = escapeDrawtext(words.slice(i, i + chunkSize).join(' ').toUpperCase())
     const start = (i / words.length) * clipDuration
     const end = Math.min(((i + chunkSize) / words.length) * clipDuration, clipDuration)
+    // Efeito "pop": cresce de 75% até 100% do tamanho nos primeiros instantes do grupo aparecer
+    const fontSizeExpr = `'if(lt(t-${start.toFixed(2)},${popDur}),${Math.round(baseFontSize * 0.75)}+${Math.round(baseFontSize * 0.25)}*(t-${start.toFixed(2)})/${popDur},${baseFontSize})'`
     parts.push(
-      `drawtext=fontfile=caption.ttf:text='${chunk}':fontsize=${fontSize}:${styleProps[styleId]}:` +
+      `drawtext=fontfile=caption.ttf:text='${chunk}':fontsize=${fontSizeExpr}:${styleProps[styleId]}:` +
       `x=(w-text_w)/2:y=${yExpr}:` +
       `enable='between(t,${start.toFixed(2)},${end.toFixed(2)})'`
     )
@@ -186,7 +190,8 @@ export async function cutVideoClip(
   faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number },
   watermarkPng?: Blob,
   captionStyle: CaptionStyleId = 'classic',
-  captionPosition: CaptionPosition = 'bottom'
+  captionPosition: CaptionPosition = 'bottom',
+  faceSide: 'left' | 'right' = 'left'
 ): Promise<Blob> {
   const ff = await loadFFmpeg()
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -240,13 +245,16 @@ export async function cutVideoClip(
   let trimmedAudioInComplex = false
 
   if (layout === 'split') {
-    // Corta a metade ESQUERDA do quadro original para cima e a DIREITA para baixo —
-    // separa duas pessoas lado a lado em vez de duplicar o mesmo recorte central.
+    // Corta as duas metades do quadro (esquerda/direita) e empilha — o lado com o rosto
+    // (ex: streamer em live) sempre vai pra cima, o resto (ex: gameplay) pra baixo.
     const halfH = Math.round(H / 2)
     const cropExpr = `crop=ih*${W}/${halfH}:ih`
+    const leftX = '0:0'
+    const rightX = 'in_w-out_w:0'
+    const [topX, botX] = faceSide === 'right' ? [rightX, leftX] : [leftX, rightX]
     const trimPrefix = `[0:v]trim=start=${startTime}:end=${endTime},setpts=PTS-STARTPTS,`
-    const topFilter = `${trimPrefix}${cropExpr}:0:0,scale=${W}:${halfH}:flags=lanczos${fadeFilters}[top]`
-    const botFilter = `${trimPrefix}${cropExpr}:in_w-out_w:0,scale=${W}:${halfH}:flags=lanczos${fadeFilters}[bot]`
+    const topFilter = `${trimPrefix}${cropExpr}:${topX},scale=${W}:${halfH}:flags=lanczos${fadeFilters}[top]`
+    const botFilter = `${trimPrefix}${cropExpr}:${botX},scale=${W}:${halfH}:flags=lanczos${fadeFilters}[bot]`
     videoChain = `${topFilter};${botFilter};[top][bot]vstack,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black[vraw]`
     trimmedAudioInComplex = true
   } else if (layout === 'react') {
