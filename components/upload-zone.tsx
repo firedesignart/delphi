@@ -66,8 +66,8 @@ export function UploadZone({ onFileSelected }: UploadZoneProps) {
 
       setUrlMeta({ title: data.title, duration: data.duration })
 
-      // Fetch the video and create a File object
-      const videoRes = await fetch(data.directUrl)
+      // Baixa via nosso proxy (mesmo domínio, evita bloqueio de CORS do YouTube)
+      const videoRes = await fetch(data.streamUrl)
       if (!videoRes.ok) throw new Error('Falha ao baixar vídeo')
       const blob = await videoRes.blob()
       const file = new File([blob], `${data.title ?? 'video'}.mp4`, { type: 'video/mp4' })

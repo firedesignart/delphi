@@ -7,29 +7,31 @@ export async function POST(req: NextRequest) {
   const { url } = await req.json()
   if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 })
 
-  // YouTube
+  // YouTube — valida e devolve metadados + URL de stream (proxy pelo nosso servidor)
   if (ytdl.validateURL(url)) {
     try {
       const info = await ytdl.getInfo(url)
-      const format = ytdl.chooseFormat(info.formats, {
-        quality: 'highestvideo',
-        filter: 'audioandvideo',
-      })
       return NextResponse.json({
-        directUrl: format.url,
+        streamUrl: `/api/import-url/stream?url=${encodeURIComponent(url)}`,
         title: info.videoDetails.title,
         duration: Number(info.videoDetails.lengthSeconds),
         thumbnail: info.videoDetails.thumbnails?.slice(-1)[0]?.url ?? null,
       })
-    } catch (err) {
-      console.error('ytdl error:', err)
-      return NextResponse.json({ error: 'Falha ao obter vídeo do YouTube' }, { status: 500 })
+    } catch (err: any) {
+      console.error('ytdl getInfo error:', err)
+      return NextResponse.json(
+        { error: `Falha ao obter vídeo do YouTube: ${err?.message ?? 'erro desconhecido'}` },
+        { status: 500 }
+      )
     }
   }
 
-  // URL direta de vídeo (MP4, MOV, etc.)
+  // URL direta de vídeo (MP4, MOV, etc.) — também via proxy para evitar CORS
   if (DIRECT_VIDEO_RE.test(url.split('?')[0])) {
-    return NextResponse.json({ directUrl: url, title: url.split('/').pop()?.split('?')[0] ?? 'video' })
+    return NextResponse.json({
+      streamUrl: `/api/import-url/stream?url=${encodeURIComponent(url)}`,
+      title: url.split('/').pop()?.split('?')[0] ?? 'video',
+    })
   }
 
   // Tenta HEAD para detectar Content-Type de vídeo
@@ -37,7 +39,10 @@ export async function POST(req: NextRequest) {
     const head = await fetch(url, { method: 'HEAD' })
     const ct = head.headers.get('content-type') ?? ''
     if (ct.startsWith('video/')) {
-      return NextResponse.json({ directUrl: url, title: 'video' })
+      return NextResponse.json({
+        streamUrl: `/api/import-url/stream?url=${encodeURIComponent(url)}`,
+        title: 'video',
+      })
     }
   } catch {}
 

@@ -23,6 +23,45 @@ export async function loadFFmpeg(): Promise<FFmpeg> {
   return ffmpeg
 }
 
+/**
+ * Extrai apenas o áudio do vídeo, comprimido e mono.
+ * Necessário porque a Vercel limita o corpo de requisições de API routes a ~4.5MB —
+ * enviar o vídeo inteiro para /api/analyze falha silenciosamente para arquivos grandes.
+ * Áudio mono em baixa taxa de bits reduz drasticamente o tamanho mantendo qualidade
+ * suficiente para transcrição.
+ */
+export async function extractAudio(
+  videoFile: File,
+  onProgress?: (p: number) => void
+): Promise<Blob> {
+  const ff = await loadFFmpeg()
+  const inputName = 'extract_input.mp4'
+  const outputName = 'extract_output.mp3'
+
+  onProgress?.(5)
+  await ff.writeFile(inputName, await fetchFile(videoFile))
+  onProgress?.(15)
+
+  ff.on('progress', ({ progress }) => onProgress?.(15 + Math.round(progress * 75)))
+
+  await ff.exec([
+    '-i', inputName,
+    '-vn',
+    '-ac', '1',
+    '-ar', '16000',
+    '-b:a', '64k',
+    outputName,
+  ])
+
+  const data = await ff.readFile(outputName)
+  await ff.deleteFile(inputName)
+  await ff.deleteFile(outputName)
+  onProgress?.(100)
+
+  const buffer = data instanceof Uint8Array ? data.buffer.slice(0) : data
+  return new Blob([buffer as ArrayBuffer], { type: 'audio/mp3' })
+}
+
 async function ensureFont(ff: FFmpeg): Promise<boolean> {
   if (fontLoaded) return true
   for (const url of [FONT_URL, FALLBACK_FONT_URL]) {
@@ -66,7 +105,8 @@ function buildVideoFilter(layout: VideoLayout, w: number, h: number, duration: n
   let base = ''
   switch (layout) {
     case 'fill':
-      base = `crop=ih*${w}/${h}:ih,scale=${w}:${h}:flags=lanczos`
+      // "cover": amplia mantendo proporção até cobrir o quadro alvo, depois corta o excesso central
+      base = `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`
       break
     case 'letterbox':
       base = `scale=${w}:-2:flags=lanczos,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`

@@ -1,4 +1,5 @@
 import type { Clip, AnalysisProgress, VideoTheme } from '@/types'
+import { extractAudio } from './ffmpeg'
 
 export type AnalysisResult = { clips: Clip[]; theme: VideoTheme }
 
@@ -6,32 +7,46 @@ export async function* analyzeVideo(
   videoFile: File,
   onProgress: (p: AnalysisProgress) => void
 ): AsyncGenerator<AnalysisResult> {
-  onProgress({ stage: 'extracting', percent: 10, message: 'Extraindo áudio do vídeo...' })
-  await delay(600)
-  onProgress({ stage: 'transcribing', percent: 30, message: 'Transcrevendo com Whisper...' })
+  onProgress({ stage: 'extracting', percent: 5, message: 'Extraindo áudio do vídeo...' })
 
-  // Try real API first
+  let audioBlob: Blob | null = null
   try {
-    const form = new FormData()
-    form.append('video', videoFile)
-
-    const res = await fetch('/api/analyze', { method: 'POST', body: form })
-
-    if (res.ok) {
-      onProgress({ stage: 'analyzing', percent: 60, message: 'IA detectando melhores momentos...' })
-      await delay(400)
-      onProgress({ stage: 'scoring', percent: 85, message: 'Calculando scores de retenção...' })
-      await delay(300)
-      onProgress({ stage: 'done', percent: 100, message: 'Análise concluída!' })
-      const { clips, theme } = await res.json()
-      yield { clips: clips as Clip[], theme: theme ?? mockTheme() }
-      return
-    }
-  } catch {
-    // fall through to mock
+    audioBlob = await extractAudio(videoFile, (p) => {
+      onProgress({ stage: 'extracting', percent: 5 + Math.round(p * 0.2), message: 'Extraindo áudio do vídeo...' })
+    })
+  } catch (err) {
+    console.error('Audio extraction failed:', err)
   }
 
-  // Fallback: mock (when OpenAI key not configured)
+  onProgress({ stage: 'transcribing', percent: 30, message: 'Transcrevendo com Whisper...' })
+
+  // Try real API first — sends only the audio (muito menor que o vídeo)
+  if (audioBlob) {
+    try {
+      const form = new FormData()
+      form.append('audio', audioBlob, 'audio.mp3')
+
+      const res = await fetch('/api/analyze', { method: 'POST', body: form })
+
+      if (res.ok) {
+        onProgress({ stage: 'analyzing', percent: 60, message: 'IA detectando melhores momentos...' })
+        await delay(400)
+        onProgress({ stage: 'scoring', percent: 85, message: 'Calculando scores de retenção...' })
+        await delay(300)
+        onProgress({ stage: 'done', percent: 100, message: 'Análise concluída!' })
+        const { clips, theme } = await res.json()
+        yield { clips: clips as Clip[], theme: theme ?? mockTheme() }
+        return
+      } else {
+        const errBody = await res.json().catch(() => ({}))
+        console.error('Analyze API error:', res.status, errBody)
+      }
+    } catch (err) {
+      console.error('Analyze fetch failed:', err)
+    }
+  }
+
+  // Fallback: mock (quando a API falha ou GROQ_API_KEY não está configurada)
   onProgress({ stage: 'analyzing', percent: 55, message: 'IA detectando melhores momentos...' })
   await delay(800)
   onProgress({ stage: 'scoring', percent: 80, message: 'Calculando scores de retenção...' })

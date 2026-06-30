@@ -4,9 +4,9 @@ import { Clip } from '@/types'
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData()
-  const file = formData.get('video') as File | null
+  const file = (formData.get('audio') ?? formData.get('video')) as File | null
 
-  if (!file) return NextResponse.json({ error: 'No video file provided' }, { status: 400 })
+  if (!file) return NextResponse.json({ error: 'No audio file provided' }, { status: 400 })
 
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'GROQ_API_KEY not configured' }, { status: 503 })
@@ -67,7 +67,10 @@ Regras para clips:
 - 3 a 6 clips, cada um com 15 a 60 segundos
 - Marque is_best: true no clip de maior potencial viral (apenas 1)
 - scores de 0 a 100
-- Prefira momentos com gancho forte, emoção ou informação surpreendente`
+- Prefira momentos com gancho forte, emoção ou informação surpreendente
+- IMPORTANTE: "transcript" deve ser uma cópia LITERAL e EXATA de um trecho dos SEGMENTOS fornecidos acima, correspondente ao intervalo [start_time, end_time]. NUNCA invente, parafraseie ou resuma — copie o texto real que a pessoa fala nesse trecho.
+- "title" deve refletir o que é REALMENTE dito no trecho, não um título genérico de clickbait desconectado do conteúdo
+- start_time e end_time devem corresponder exatamente aos timestamps dos segmentos onde esse conteúdo aparece`
 
   let clips: Clip[] = []
   let theme = { genre: 'educativo', mood: '', music_suggestion: 'none' }
