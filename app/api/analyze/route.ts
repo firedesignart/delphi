@@ -20,8 +20,15 @@ export async function POST(req: NextRequest) {
   const truncatedText = fullText.length > MAX_CHARS ? fullText.slice(0, MAX_CHARS) + '…' : fullText
   const truncatedSegments = segmentMap.filter((s) => s.start * (MAX_CHARS / Math.max(1, fullText.length)) < MAX_CHARS).slice(0, 200)
 
+  // Quanto maior o vídeo, mais clips faz sentido extrair
+  const totalDuration = segmentMap.length > 0 ? segmentMap[segmentMap.length - 1].end : 180
+  const targetClipCount = Math.max(3, Math.min(15, Math.round(totalDuration / 90)))
+
   // Detectar clips + tema com LLaMA
   const prompt = `Você é um especialista em YouTube Shorts virais. Analise a transcrição abaixo e retorne um JSON com dois campos: "theme" e "clips".
+
+DURAÇÃO TOTAL DO VÍDEO: ${Math.round(totalDuration)} segundos (~${Math.round(totalDuration / 60)} minutos)
+NÚMERO IDEAL DE CLIPS PARA ESTE VÍDEO: ${targetClipCount}
 
 TRANSCRIÇÃO:
 ${truncatedText}
@@ -53,8 +60,8 @@ Retorne APENAS este JSON (sem markdown):
 }
 
 Regras para clips:
-- 3 a 6 clips
-- CRÍTICO: cada clip DEVE ter duração (end_time - start_time) entre 30 e 59 segundos. NUNCA gere clips com menos de 30 segundos. Se o melhor momento for curto, EXPANDA o intervalo incluindo o contexto antes e/ou depois (frases adjacentes) até atingir pelo menos 30 segundos — um clip de 6-8 segundos é INACEITÁVEL e inútil para Shorts.
+- Gere aproximadamente ${targetClipCount} clips (varie conforme a quantidade de bons momentos reais disponíveis, mas use esse número como alvo)
+- CRÍTICO: cada clip DEVE ter duração (end_time - start_time) entre 59 e 90 segundos. NUNCA gere clips com menos de 59 segundos. Se o melhor momento for curto, EXPANDA o intervalo incluindo o contexto antes e/ou depois (frases adjacentes) até atingir pelo menos 59 segundos — um clip curto é INACEITÁVEL e inútil para Shorts.
 - Marque is_best: true no clip de maior potencial viral (apenas 1)
 - scores de 0 a 100
 - Prefira momentos com gancho forte, emoção ou informação surpreendente
@@ -62,8 +69,8 @@ Regras para clips:
 - "title" deve refletir o que é REALMENTE dito no trecho, não um título genérico de clickbait desconectado do conteúdo
 - start_time e end_time devem corresponder exatamente aos timestamps dos segmentos onde esse conteúdo aparece`
 
-  const MIN_DURATION = 30
-  const MAX_DURATION = 59
+  const MIN_DURATION = 59
+  const MAX_DURATION = 90
   const maxAvailableEnd = segmentMap.length > 0 ? segmentMap[segmentMap.length - 1].end : Infinity
 
   function clampDuration(start: number, end: number): { start: number; end: number } {

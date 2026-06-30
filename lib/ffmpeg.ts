@@ -89,19 +89,37 @@ function escapeDrawtext(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:').replace(/%/g, '\\%')
 }
 
-function buildCaptionFilter(transcript: string, clipDuration: number, outH: number): string {
+export type CaptionStyleId = 'classic' | 'highlight' | 'box'
+export type CaptionPosition = 'bottom' | 'center' | 'top'
+
+function buildCaptionFilter(
+  transcript: string,
+  clipDuration: number,
+  outH: number,
+  styleId: CaptionStyleId = 'classic',
+  position: CaptionPosition = 'bottom'
+): string {
   const words = transcript.split(' ').filter(Boolean)
   if (words.length === 0) return ''
   const chunkSize = Math.max(3, Math.ceil(words.length / Math.max(1, Math.floor(clipDuration / 2.2))))
   const fontSize = Math.round(outH * 0.045)
+
+  const yExpr = position === 'top' ? `h*0.10` : position === 'center' ? `(h-text_h)/2` : `h-h*0.18`
+
+  const styleProps: Record<CaptionStyleId, string> = {
+    classic: `fontcolor=white:borderw=${Math.round(fontSize * 0.12)}:bordercolor=black`,
+    highlight: `fontcolor=#FFE600:borderw=${Math.round(fontSize * 0.14)}:bordercolor=black`,
+    box: `fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=${Math.round(fontSize * 0.25)}`,
+  }
+
   const parts: string[] = []
   for (let i = 0; i < words.length; i += chunkSize) {
     const chunk = escapeDrawtext(words.slice(i, i + chunkSize).join(' ').toUpperCase())
     const start = (i / words.length) * clipDuration
     const end = Math.min(((i + chunkSize) / words.length) * clipDuration, clipDuration)
     parts.push(
-      `drawtext=fontfile=caption.ttf:text='${chunk}':fontsize=${fontSize}:fontcolor=white:` +
-      `borderw=${Math.round(fontSize * 0.12)}:bordercolor=black:x=(w-text_w)/2:y=h-h*0.18:` +
+      `drawtext=fontfile=caption.ttf:text='${chunk}':fontsize=${fontSize}:${styleProps[styleId]}:` +
+      `x=(w-text_w)/2:y=${yExpr}:` +
       `enable='between(t,${start.toFixed(2)},${end.toFixed(2)})'`
     )
   }
@@ -166,7 +184,9 @@ export async function cutVideoClip(
   onProgress?: (p: number) => void,
   signal?: AbortSignal,
   faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number },
-  watermarkPng?: Blob
+  watermarkPng?: Blob,
+  captionStyle: CaptionStyleId = 'classic',
+  captionPosition: CaptionPosition = 'bottom'
 ): Promise<Blob> {
   const ff = await loadFFmpeg()
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -210,7 +230,7 @@ export async function cutVideoClip(
   onProgress?.(22)
   ff.on('progress', ({ progress }) => onProgress?.(22 + Math.round(progress * 70)))
 
-  const captionFilter = hasFont && burnTranscript ? buildCaptionFilter(burnTranscript, duration, H) : ''
+  const captionFilter = hasFont && burnTranscript ? buildCaptionFilter(burnTranscript, duration, H, captionStyle, captionPosition) : ''
   const fadeFilters = transition !== 'none'
     ? `,fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${Math.max(0, duration - fadeDur)}:d=${fadeDur}`
     : ''

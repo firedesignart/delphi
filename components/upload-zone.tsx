@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { Upload, FileVideo, X, Check, Link, Loader2, HardDrive, RefreshCw, FolderOpen } from 'lucide-react'
+import { Upload, FileVideo, X, Check, Link, Loader2, HardDrive, RefreshCw, FolderOpen, FileDown } from 'lucide-react'
 import { cn, formatFileSize } from '@/lib/utils'
 import { Button } from './ui/button'
 import { pingLocalHelper, listLocalFiles, type LocalFile } from '@/lib/local-helper'
@@ -276,9 +276,17 @@ export function UploadZone({ onFileSelected, onLocalFileSelected }: UploadZonePr
               <p className="text-xs text-amber-700">
                 Para usar este modo, baixe e rode o Agente Local Delphi no seu computador:
               </p>
+              <a
+                href="/downloads/delphi-local-helper.zip"
+                download
+                className="inline-flex items-center gap-2 bg-amber-900 text-white text-xs font-medium px-4 py-2.5 rounded-lg hover:bg-amber-800 transition-colors"
+              >
+                <FileDown size={14} /> Baixar Agente Local (.zip)
+              </a>
               <ol className="text-xs text-amber-800 space-y-1 ml-4 list-decimal">
-                <li>Abra a pasta <code className="bg-amber-100 px-1 rounded">delphi-local-helper</code></li>
+                <li>Extraia o arquivo .zip baixado em qualquer pasta</li>
                 <li>Dê duplo-clique em <code className="bg-amber-100 px-1 rounded">start.bat</code></li>
+                <li>Na primeira vez, o Windows pode pedir para instalar o Node.js — baixe em <a href="https://nodejs.org" target="_blank" className="underline">nodejs.org</a> se necessário</li>
                 <li>Coloque seu vídeo na pasta <code className="bg-amber-100 px-1 rounded">Delphi/Input</code> que será criada</li>
                 <li>Volte aqui e clique em atualizar</li>
               </ol>

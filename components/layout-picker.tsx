@@ -2,11 +2,23 @@
 import { useState, useRef } from 'react'
 import { X, Download, Loader2, Music, Zap, Type, ScanFace, Sparkle } from 'lucide-react'
 import type { Clip } from '@/types'
-import { cutVideoClip } from '@/lib/ffmpeg'
+import { cutVideoClip, type CaptionStyleId, type CaptionPosition } from '@/lib/ffmpeg'
 import { trackFaces, type FaceTrackPoint } from '@/lib/face-tracking'
 import { getDelphiWatermarkPng } from '@/lib/watermark'
 import { cutClipLocal } from '@/lib/local-helper'
 import { formatDuration, cn } from '@/lib/utils'
+
+const CAPTION_STYLES: { id: CaptionStyleId; label: string; preview: string }[] = [
+  { id: 'classic', label: 'Clássica', preview: 'Aa' },
+  { id: 'highlight', label: 'Destaque', preview: 'Aa' },
+  { id: 'box', label: 'Caixa', preview: 'Aa' },
+]
+
+const CAPTION_POSITIONS: { id: CaptionPosition; label: string }[] = [
+  { id: 'top', label: 'Topo' },
+  { id: 'center', label: 'Centro' },
+  { id: 'bottom', label: 'Base' },
+]
 
 export type VideoLayout = 'fill' | 'letterbox' | 'split' | 'auto' | 'react'
 export type Transition = 'none' | 'fade' | 'dissolve'
@@ -67,6 +79,8 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
   const [musicGenre, setMusicGenre] = useState<string>(suggestedMusic !== 'none' ? suggestedMusic : 'none')
   const [captions, setCaptions] = useState(true)
   const [burnCaptions, setBurnCaptions] = useState(true)
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyleId>('classic')
+  const [captionPosition, setCaptionPosition] = useState<CaptionPosition>('bottom')
   const [watermark, setWatermark] = useState(false)
   const [cutting, setCutting] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -157,7 +171,9 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
         setProgress,
         ctrl.signal,
         faceTrack,
-        watermarkPng
+        watermarkPng,
+        captionStyle,
+        captionPosition
       )
 
       const url = URL.createObjectURL(blob)
@@ -279,20 +295,45 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
             </div>
           )}
 
-          {/* Burn captions toggle — não disponível no modo Agente Local v1 */}
+          {/* Burn captions toggle + estilo — não disponível no modo Agente Local v1 */}
           {!localFilename && (
-            <div className="flex items-center justify-between py-3 border-t border-[#f0f0f0]">
-              <div className="flex items-center gap-2">
-                <Type size={14} className="text-[#888]" />
-                <div>
-                  <p className="text-sm font-medium text-[#111]">Legenda no vídeo</p>
-                  <p className="text-xs text-[#999]">Queima o texto direto na imagem</p>
+            <div className="border-t border-[#f0f0f0] pt-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Type size={14} className="text-[#888]" />
+                  <div>
+                    <p className="text-sm font-medium text-[#111]">Legenda no vídeo</p>
+                    <p className="text-xs text-[#999]">Queima o texto direto na imagem</p>
+                  </div>
                 </div>
+                <button onClick={() => setBurnCaptions(!burnCaptions)}
+                  className={cn('w-10 h-6 rounded-full transition-colors relative shrink-0', burnCaptions ? 'bg-[#111]' : 'bg-[#ddd]')}>
+                  <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', burnCaptions ? 'left-5' : 'left-1')} />
+                </button>
               </div>
-              <button onClick={() => setBurnCaptions(!burnCaptions)}
-                className={cn('w-10 h-6 rounded-full transition-colors relative shrink-0', burnCaptions ? 'bg-[#111]' : 'bg-[#ddd]')}>
-                <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', burnCaptions ? 'left-5' : 'left-1')} />
-              </button>
+
+              {burnCaptions && (
+                <div className="space-y-2 pl-6">
+                  <div className="flex gap-2">
+                    {CAPTION_STYLES.map((s) => (
+                      <button key={s.id} onClick={() => setCaptionStyle(s.id)}
+                        className={cn('flex-1 rounded-lg border-2 py-2 text-xs font-medium transition-all',
+                          captionStyle === s.id ? 'border-[#111] bg-[#111] text-white' : 'border-[#e5e5e5] text-[#666] hover:border-[#ccc]')}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    {CAPTION_POSITIONS.map((p) => (
+                      <button key={p.id} onClick={() => setCaptionPosition(p.id)}
+                        className={cn('flex-1 rounded-lg border-2 py-1.5 text-xs font-medium transition-all',
+                          captionPosition === p.id ? 'border-[#111] bg-[#f5f5f5] text-[#111]' : 'border-[#eee] text-[#999] hover:border-[#ccc]')}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

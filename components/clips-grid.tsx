@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, X, Clock, Zap, Heart, TrendingUp, Star, Download, Play, Plus, ScanFace, Sparkle, Rows3, Square } from 'lucide-react'
 import type { Clip, VideoProject } from '@/types'
 import { cn, formatDuration, scoreColor, scoreBg } from '@/lib/utils'
@@ -7,6 +7,8 @@ import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { LayoutPicker, type VideoLayout, type AspectRatio } from './layout-picker'
 import { ClipDetailModal } from './clip-detail-modal'
+import { captureFrame } from '@/lib/thumbnail'
+import { localStreamUrl } from '@/lib/local-helper'
 
 const FORMAT_LAYOUTS: { id: VideoLayout; label: string; icon: any; localOk: boolean }[] = [
   { id: 'auto', label: 'Seguir Rosto', icon: ScanFace, localOk: false },
@@ -54,8 +56,36 @@ function ClipCard({ clip, videoFile, localFilename, suggestedMusic, defaultLayou
 }) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [thumbnail, setThumbnail] = useState<string | null>(null)
   const approved = clip.status === 'APPROVED'
   const rejected = clip.status === 'REJECTED'
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl: string | null = null
+
+    async function generate() {
+      try {
+        let src: string
+        if (localFilename) {
+          src = localStreamUrl(localFilename)
+        } else if (videoFile) {
+          objectUrl = URL.createObjectURL(videoFile)
+          src = objectUrl
+        } else {
+          return
+        }
+        const frame = await captureFrame(src, clip.startTime + Math.min(2, clip.duration / 4))
+        if (!cancelled) setThumbnail(frame)
+      } catch { /* mantém o placeholder se falhar */ }
+    }
+
+    generate()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [clip.id, clip.startTime, clip.duration, videoFile, localFilename])
 
   return (
     <>
@@ -90,9 +120,14 @@ function ClipCard({ clip, videoFile, localFilename, suggestedMusic, defaultLayou
         clip.isBest && !rejected && 'ring-2 ring-yellow-300 border-yellow-200'
       )}>
         <div className="relative bg-gradient-to-b from-[#1a1a1a] to-[#333] aspect-[9/16] max-h-48 overflow-hidden">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-white/20 text-7xl font-black">{clip.id.split('-').pop()}</div>
-          </div>
+          {thumbnail ? (
+            <img src={thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-white/20 text-7xl font-black">{clip.id.split('-').pop()}</div>
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
 
           {/* Best badge */}
           {clip.isBest && (
