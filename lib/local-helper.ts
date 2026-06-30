@@ -53,7 +53,7 @@ export async function cutClipLocal(params: {
   filename: string
   startTime: number
   endTime: number
-  layout: 'fill' | 'letterbox'
+  layout: 'fill' | 'letterbox' | 'split'
   width: number
   height: number
   outputName: string

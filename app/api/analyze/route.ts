@@ -53,13 +53,37 @@ Retorne APENAS este JSON (sem markdown):
 }
 
 Regras para clips:
-- 3 a 6 clips, cada um com 15 a 60 segundos
+- 3 a 6 clips
+- CRÍTICO: cada clip DEVE ter duração (end_time - start_time) entre 30 e 59 segundos. NUNCA gere clips com menos de 30 segundos. Se o melhor momento for curto, EXPANDA o intervalo incluindo o contexto antes e/ou depois (frases adjacentes) até atingir pelo menos 30 segundos — um clip de 6-8 segundos é INACEITÁVEL e inútil para Shorts.
 - Marque is_best: true no clip de maior potencial viral (apenas 1)
 - scores de 0 a 100
 - Prefira momentos com gancho forte, emoção ou informação surpreendente
-- IMPORTANTE: "transcript" deve ser uma cópia LITERAL e EXATA de um trecho dos SEGMENTOS fornecidos acima, correspondente ao intervalo [start_time, end_time]. NUNCA invente, parafraseie ou resuma — copie o texto real que a pessoa fala nesse trecho.
+- IMPORTANTE: "transcript" deve ser uma cópia LITERAL e EXATA do trecho dos SEGMENTOS fornecidos acima, correspondente ao intervalo [start_time, end_time] completo (não apenas a frase do gancho). NUNCA invente, parafraseie ou resuma — copie o texto real que a pessoa fala em todo o trecho.
 - "title" deve refletir o que é REALMENTE dito no trecho, não um título genérico de clickbait desconectado do conteúdo
 - start_time e end_time devem corresponder exatamente aos timestamps dos segmentos onde esse conteúdo aparece`
+
+  const MIN_DURATION = 30
+  const MAX_DURATION = 59
+  const maxAvailableEnd = segmentMap.length > 0 ? segmentMap[segmentMap.length - 1].end : Infinity
+
+  function clampDuration(start: number, end: number): { start: number; end: number } {
+    let s = Math.max(0, start)
+    let e = end
+
+    if (e - s > MAX_DURATION) {
+      e = s + MAX_DURATION
+    }
+
+    if (e - s < MIN_DURATION) {
+      const needed = MIN_DURATION - (e - s)
+      e = Math.min(maxAvailableEnd, e + needed)
+      if (e - s < MIN_DURATION) {
+        s = Math.max(0, s - (MIN_DURATION - (e - s)))
+      }
+    }
+
+    return { start: s, end: e }
+  }
 
   let clips: Clip[] = []
   let theme = { genre: 'educativo', mood: '', music_suggestion: 'none' }
@@ -80,25 +104,33 @@ Regras para clips:
 
     clips = (parsed.clips ?? [])
       .filter((c: any) => c.start_time != null && c.end_time != null && c.title)
-      .map((c: any, i: number) => ({
-        id: `clip-${Date.now()}-${i}`,
-        mediaAssetId: '',
-        title: c.title,
-        description: c.description ?? '',
-        startTime: c.start_time,
-        endTime: c.end_time,
-        duration: c.end_time - c.start_time,
-        hookScore: c.hook_score ?? 70,
-        emotionScore: c.emotion_score ?? 70,
-        narrativeScore: c.narrative_score ?? 70,
-        energyScore: c.energy_score ?? 70,
-        totalScore: Math.round(((c.hook_score ?? 70) + (c.emotion_score ?? 70) + (c.narrative_score ?? 70) + (c.energy_score ?? 70)) / 4),
-        transcript: c.transcript ?? '',
-        status: 'PENDING' as const,
-        isBest: c.is_best === true,
-        thumbnailUrl: null,
-        createdAt: new Date().toISOString(),
-      }))
+      .map((c: any, i: number) => {
+        const { start, end } = clampDuration(c.start_time, c.end_time)
+        // Se o clip foi expandido além do trecho original, complementa a transcrição com os segmentos do novo intervalo
+        const transcript = (end - start) > (c.end_time - c.start_time) + 1
+          ? segmentMap.filter((s) => s.start >= start && s.end <= end).map((s) => s.text).join(' ').trim() || c.transcript
+          : c.transcript
+
+        return {
+          id: `clip-${Date.now()}-${i}`,
+          mediaAssetId: '',
+          title: c.title,
+          description: c.description ?? '',
+          startTime: start,
+          endTime: end,
+          duration: end - start,
+          hookScore: c.hook_score ?? 70,
+          emotionScore: c.emotion_score ?? 70,
+          narrativeScore: c.narrative_score ?? 70,
+          energyScore: c.energy_score ?? 70,
+          totalScore: Math.round(((c.hook_score ?? 70) + (c.emotion_score ?? 70) + (c.narrative_score ?? 70) + (c.energy_score ?? 70)) / 4),
+          transcript: transcript ?? '',
+          status: 'PENDING' as const,
+          isBest: c.is_best === true,
+          thumbnailUrl: null,
+          createdAt: new Date().toISOString(),
+        }
+      })
 
     if (clips.length === 0) {
       console.error('LLaMA returned zero valid clips. Raw response:', raw)

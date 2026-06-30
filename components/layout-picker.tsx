@@ -73,7 +73,9 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
   const abortRef = useRef<AbortController | null>(null)
 
   const isVertical = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '1:1'
-  const availableLayouts = localFilename ? LAYOUTS.filter((l) => l.id === 'fill' || l.id === 'letterbox') : LAYOUTS
+  const availableLayouts = localFilename
+    ? LAYOUTS.filter((l) => l.id === 'fill' || l.id === 'letterbox' || l.id === 'split')
+    : LAYOUTS
 
   async function handleExport() {
     const ctrl = new AbortController()
@@ -90,7 +92,7 @@ export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 
           filename: localFilename,
           startTime: clip.startTime,
           endTime: clip.endTime,
-          layout: layout === 'letterbox' ? 'letterbox' : 'fill',
+          layout: layout === 'letterbox' || layout === 'split' ? layout : 'fill',
           width: ratio.w,
           height: ratio.h,
           outputName: `${clip.title}_${aspectRatio.replace(':', 'x')}`,
