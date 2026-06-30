@@ -1,13 +1,15 @@
 'use client'
 import { useState } from 'react'
-import { Check, X, Play, Clock, Zap, Heart, TrendingUp, Star } from 'lucide-react'
+import { Check, X, Clock, Zap, Heart, TrendingUp, Star, Download, Loader2 } from 'lucide-react'
 import type { Clip } from '@/types'
 import { cn, formatDuration, scoreColor, scoreBg } from '@/lib/utils'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
+import { cutVideoClip } from '@/lib/ffmpeg'
 
 interface ClipsGridProps {
   clips: Clip[]
+  videoFile: File | null
   onClipsChange: (clips: Clip[]) => void
   onProceed: () => void
 }
@@ -29,16 +31,45 @@ function ScoreBar({ label, value, icon: Icon }: { label: string; value: number; 
 
 function ClipCard({
   clip,
+  videoFile,
   onApprove,
   onReject,
 }: {
   clip: Clip
+  videoFile: File | null
   onApprove: () => void
   onReject: () => void
 }) {
-  const [playing, setPlaying] = useState(false)
+  const [cutting, setCutting] = useState(false)
+  const [cutProgress, setCutProgress] = useState(0)
   const approved = clip.status === 'APPROVED'
   const rejected = clip.status === 'REJECTED'
+
+  async function handleDownload() {
+    if (!videoFile) return
+    setCutting(true)
+    setCutProgress(0)
+    try {
+      const blob = await cutVideoClip(
+        videoFile,
+        clip.startTime,
+        clip.endTime,
+        (p) => setCutProgress(p)
+      )
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${clip.title.replace(/[^a-zA-Z0-9]/g, '_')}.mp4`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Cut error:', err)
+      alert('Erro ao cortar o vídeo. Tente novamente.')
+    } finally {
+      setCutting(false)
+      setCutProgress(0)
+    }
+  }
 
   return (
     <div
@@ -49,14 +80,13 @@ function ClipCard({
         !approved && !rejected && 'border-[#e5e5e5] hover:border-[#ccc]'
       )}
     >
-      {/* Thumbnail area — vertical 9:16 */}
+      {/* Thumbnail area */}
       <div className="relative bg-gradient-to-b from-[#1a1a1a] to-[#333] aspect-[9/16] max-h-48 overflow-hidden flex items-center justify-center">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-white/20 text-7xl font-black">
-            {clip.id.split('_')[1]}
+            {clip.id.split('_')[1] ?? '?'}
           </div>
         </div>
-        {/* Score badge */}
         <div className="absolute top-2 left-2">
           <div
             className={cn(
@@ -67,16 +97,27 @@ function ClipCard({
             {clip.totalScore}
           </div>
         </div>
-        {/* Duration */}
         <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1">
           <Clock size={10} />
           {formatDuration(clip.duration)}
         </div>
-        {/* Status overlay */}
         {approved && (
           <div className="absolute inset-0 bg-emerald-500/20 flex items-center justify-center">
             <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center">
               <Check size={20} className="text-white" />
+            </div>
+          </div>
+        )}
+        {/* Cut progress overlay */}
+        {cutting && (
+          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-2">
+            <Loader2 size={24} className="text-white animate-spin" />
+            <span className="text-white text-xs font-medium">{cutProgress}%</span>
+            <div className="w-3/4 h-1 bg-white/20 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-white rounded-full transition-all"
+                style={{ width: `${cutProgress}%` }}
+              />
             </div>
           </div>
         )}
@@ -89,12 +130,10 @@ function ClipCard({
         </h3>
         <p className="text-xs text-[#888] mb-3 line-clamp-2">{clip.description}</p>
 
-        {/* Time range */}
         <div className="text-xs text-[#bbb] mb-3">
           {formatDuration(clip.startTime)} → {formatDuration(clip.endTime)}
         </div>
 
-        {/* Score breakdown */}
         <div className="space-y-1.5 mb-4">
           <ScoreBar label="Hook" value={clip.hookScore} icon={Zap} />
           <ScoreBar label="Emoção" value={clip.emotionScore} icon={Heart} />
@@ -102,12 +141,10 @@ function ClipCard({
           <ScoreBar label="Energia" value={clip.energyScore} icon={Star} />
         </div>
 
-        {/* Transcript preview */}
         <div className="bg-[#fafafa] rounded-lg p-2 mb-4 text-xs text-[#666] italic line-clamp-2">
           "{clip.transcript}"
         </div>
 
-        {/* Actions */}
         <div className="flex gap-2">
           <Button
             variant={approved ? 'primary' : 'secondary'}
@@ -118,6 +155,16 @@ function ClipCard({
             <Check size={14} />
             {approved ? 'Aprovado' : 'Aprovar'}
           </Button>
+          {videoFile && (
+            <button
+              onClick={handleDownload}
+              disabled={cutting}
+              title="Baixar este clip cortado"
+              className="w-8 h-8 rounded-lg hover:bg-blue-50 flex items-center justify-center text-[#ccc] hover:text-blue-500 transition-colors disabled:opacity-40"
+            >
+              {cutting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            </button>
+          )}
           <button
             onClick={onReject}
             className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#ccc] hover:text-red-500 transition-colors"
@@ -130,7 +177,7 @@ function ClipCard({
   )
 }
 
-export function ClipsGrid({ clips, onClipsChange, onProceed }: ClipsGridProps) {
+export function ClipsGrid({ clips, videoFile, onClipsChange, onProceed }: ClipsGridProps) {
   const approvedCount = clips.filter((c) => c.status === 'APPROVED').length
 
   function approve(id: string) {
@@ -147,7 +194,6 @@ export function ClipsGrid({ clips, onClipsChange, onProceed }: ClipsGridProps) {
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-[#111]">Shorts detectados</h2>
@@ -162,22 +208,18 @@ export function ClipsGrid({ clips, onClipsChange, onProceed }: ClipsGridProps) {
           <Button variant="ghost" size="sm" onClick={approveAll}>
             Aprovar todos
           </Button>
-          <Button
-            size="sm"
-            onClick={onProceed}
-            disabled={approvedCount === 0}
-          >
+          <Button size="sm" onClick={onProceed} disabled={approvedCount === 0}>
             Publicar {approvedCount > 0 ? `(${approvedCount})` : ''} →
           </Button>
         </div>
       </div>
 
-      {/* Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {clips.map((clip) => (
           <ClipCard
             key={clip.id}
             clip={clip}
+            videoFile={videoFile}
             onApprove={() => approve(clip.id)}
             onReject={() => reject(clip.id)}
           />

@@ -1,28 +1,45 @@
 import type { Clip, AnalysisProgress } from '@/types'
 
-// Mock AI analysis — replace with OpenAI Whisper + GPT-4o calls when keys are available
 export async function* analyzeVideo(
   videoFile: File,
   onProgress: (p: AnalysisProgress) => void
 ): AsyncGenerator<Clip[]> {
-  const stages: AnalysisProgress[] = [
-    { stage: 'extracting', percent: 10, message: 'Extraindo áudio do vídeo...' },
-    { stage: 'transcribing', percent: 30, message: 'Transcrevendo com Whisper...' },
-    { stage: 'analyzing', percent: 55, message: 'IA detectando melhores momentos...' },
-    { stage: 'scoring', percent: 80, message: 'Calculando scores de retenção...' },
-    { stage: 'done', percent: 100, message: 'Análise concluída!' },
-  ]
+  onProgress({ stage: 'extracting', percent: 10, message: 'Extraindo áudio do vídeo...' })
+  await delay(600)
+  onProgress({ stage: 'transcribing', percent: 30, message: 'Transcrevendo com Whisper...' })
 
-  for (const stage of stages) {
-    await delay(800)
-    onProgress(stage)
+  // Try real API first
+  try {
+    const form = new FormData()
+    form.append('video', videoFile)
+
+    const res = await fetch('/api/analyze', { method: 'POST', body: form })
+
+    if (res.ok) {
+      onProgress({ stage: 'analyzing', percent: 60, message: 'IA detectando melhores momentos...' })
+      await delay(400)
+      onProgress({ stage: 'scoring', percent: 85, message: 'Calculando scores de retenção...' })
+      await delay(300)
+      onProgress({ stage: 'done', percent: 100, message: 'Análise concluída!' })
+      const { clips } = await res.json()
+      yield clips as Clip[]
+      return
+    }
+  } catch {
+    // fall through to mock
   }
 
-  const durationGuess = 300 // 5 min mock
-  yield generateMockClips(videoFile.name, durationGuess)
+  // Fallback: mock (when OpenAI key not configured)
+  onProgress({ stage: 'analyzing', percent: 55, message: 'IA detectando melhores momentos...' })
+  await delay(800)
+  onProgress({ stage: 'scoring', percent: 80, message: 'Calculando scores de retenção...' })
+  await delay(800)
+  onProgress({ stage: 'done', percent: 100, message: 'Análise concluída! (modo demonstração)' })
+
+  yield generateMockClips(videoFile.name)
 }
 
-function generateMockClips(filename: string, totalDuration: number): Clip[] {
+function generateMockClips(filename: string): Clip[] {
   const mockClips = [
     {
       title: 'O maior erro que criadores cometem',

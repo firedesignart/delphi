@@ -86,6 +86,7 @@ export default function Home() {
           {step === 3 && clips.length > 0 && (
             <ClipsGrid
               clips={clips}
+              videoFile={videoFile}
               onClipsChange={setClips}
               onProceed={() => setStep(4)}
             />
