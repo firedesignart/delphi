@@ -35,7 +35,6 @@ export async function extractAudio(
   videoFile: File,
   onProgress?: (p: number) => void
 ): Promise<Blob> {
-  // Arquivos muito grandes costumam exceder a memória disponível do FFmpeg no navegador
   const MAX_SIZE = 1.5 * 1024 * 1024 * 1024 // 1.5GB
   if (videoFile.size > MAX_SIZE) {
     throw new Error(
@@ -55,14 +54,7 @@ export async function extractAudio(
 
     ff.on('progress', ({ progress }) => onProgress?.(15 + Math.round(progress * 75)))
 
-    await ff.exec([
-      '-i', inputName,
-      '-vn',
-      '-ac', '1',
-      '-ar', '16000',
-      '-b:a', '64k',
-      outputName,
-    ])
+    await ff.exec(['-i', inputName, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', outputName])
 
     const data = await ff.readFile(outputName)
     await ff.deleteFile(inputName)
@@ -72,7 +64,6 @@ export async function extractAudio(
     const buffer = data instanceof Uint8Array ? data.buffer.slice(0) : data
     return new Blob([buffer as ArrayBuffer], { type: 'audio/mp3' })
   } catch (err) {
-    // Estado do FFmpeg pode ficar corrompido após uma falha — força recarregar do zero na próxima tentativa
     loaded = false
     ffmpeg = null
     throw err
@@ -117,41 +108,50 @@ function buildCaptionFilter(transcript: string, clipDuration: number, outH: numb
   return parts.join(',')
 }
 
-function buildVideoFilter(
-  layout: VideoLayout,
+function buildFillFilter(w: number, h: number, faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number }): string {
+  if (!faceTrack) return `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`
+  const scaledWidth = Math.round((faceTrack.videoWidth / faceTrack.videoHeight) * h)
+  const cropXExpr = buildDynamicCropXExpr(faceTrack.points, scaledWidth, w)
+  return `scale=${scaledWidth}:${h}:flags=lanczos,crop=${w}:${h}:x='${cropXExpr}':y=0`
+}
+
+/**
+ * Layout "React": fundo desfocado preenchendo o quadro + um recorte nítido
+ * (rastreado por rosto, se disponível) centralizado por cima — estilo reaction/podcast clip.
+ */
+function buildReactFilterComplex(
   w: number,
   h: number,
-  duration: number,
-  transition: Transition,
-  faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number }
+  faceTrack: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number } | undefined,
+  trimPrefix: string
 ): string {
-  const fadeDur = 0.4
-  let base = ''
-  switch (layout) {
-    case 'fill':
-      // "cover": amplia mantendo proporção até cobrir o quadro alvo, depois corta o excesso central
-      base = `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`
-      break
-    case 'letterbox':
-      base = `scale=${w}:-2:flags=lanczos,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`
-      break
-    case 'auto': {
-      if (!faceTrack) {
-        base = `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`
-        break
-      }
-      const scaledWidth = Math.round((faceTrack.videoWidth / faceTrack.videoHeight) * h)
-      const cropXExpr = buildDynamicCropXExpr(faceTrack.points, scaledWidth, w)
-      base = `scale=${scaledWidth}:${h}:flags=lanczos,crop=${w}:${h}:x='${cropXExpr}':y=0`
-      break
-    }
-    case 'split':
-      return ''
+  const insetW = Math.round(w * 0.86)
+  const insetH = Math.round(h * 0.62)
+  const insetY = Math.round(h * 0.19)
+
+  const bg = `${trimPrefix}scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h},boxblur=24:2,eq=brightness=-0.06[bg]`
+
+  let fgCrop: string
+  if (faceTrack) {
+    const scaledWidth = Math.round((faceTrack.videoWidth / faceTrack.videoHeight) * insetH)
+    const cropXExpr = buildDynamicCropXExpr(faceTrack.points, scaledWidth, insetW)
+    fgCrop = `scale=${scaledWidth}:${insetH}:flags=lanczos,crop=${insetW}:${insetH}:x='${cropXExpr}':y=0`
+  } else {
+    fgCrop = `scale=${insetW}:${insetH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${insetW}:${insetH}`
   }
-  if (transition === 'none') return base
-  const fadeIn = `fade=t=in:st=0:d=${fadeDur}`
-  const fadeOut = `fade=t=out:st=${Math.max(0, duration - fadeDur)}:d=${fadeDur}`
-  return `${base},${fadeIn},${fadeOut}`
+  const fg = `${trimPrefix}${fgCrop}[fg]`
+
+  return `${bg};${fg};[bg][fg]overlay=(${w}-${insetW})/2:${insetY}:format=auto[vout]`
+}
+
+interface CutOptions {
+  layout: VideoLayout
+  transition: Transition
+  musicUrl?: string
+  outputSize: { width: number; height: number }
+  burnTranscript?: string
+  faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number }
+  watermarkPng?: Blob
 }
 
 export async function cutVideoClip(
@@ -165,7 +165,8 @@ export async function cutVideoClip(
   burnTranscript?: string,
   onProgress?: (p: number) => void,
   signal?: AbortSignal,
-  faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number }
+  faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number },
+  watermarkPng?: Blob
 ): Promise<Blob> {
   const ff = await loadFFmpeg()
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -174,17 +175,16 @@ export async function cutVideoClip(
   const duration = endTime - startTime
   const inputName = 'input.mp4'
   const musicName = 'music.mp3'
+  const watermarkName = 'watermark.png'
   const outputName = 'output.mp4'
   const fadeDur = 0.4
 
   onProgress?.(5)
   await ff.writeFile(inputName, await fetchFile(videoFile))
-  onProgress?.(15)
+  onProgress?.(12)
 
   let hasFont = false
-  if (burnTranscript) {
-    hasFont = await ensureFont(ff)
-  }
+  if (burnTranscript) hasFont = await ensureFont(ff)
 
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
@@ -193,74 +193,93 @@ export async function cutVideoClip(
     try {
       const musicRes = await fetch(musicUrl)
       if (musicRes.ok) {
-        const musicBlob = await musicRes.blob()
-        await ff.writeFile(musicName, await fetchFile(musicBlob))
+        await ff.writeFile(musicName, await fetchFile(await musicRes.blob()))
         hasMusicFile = true
       }
     } catch { /* skip music */ }
   }
 
-  onProgress?.(25)
-  ff.on('progress', ({ progress }) => onProgress?.(25 + Math.round(progress * 70)))
+  let hasWatermark = false
+  if (watermarkPng) {
+    try {
+      await ff.writeFile(watermarkName, await fetchFile(watermarkPng))
+      hasWatermark = true
+    } catch { /* skip watermark */ }
+  }
+
+  onProgress?.(22)
+  ff.on('progress', ({ progress }) => onProgress?.(22 + Math.round(progress * 70)))
 
   const captionFilter = hasFont && burnTranscript ? buildCaptionFilter(burnTranscript, duration, H) : ''
+  const fadeFilters = transition !== 'none'
+    ? `,fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${Math.max(0, duration - fadeDur)}:d=${fadeDur}`
+    : ''
 
-  let args: string[]
+  // Constrói o filtro de vídeo principal, sempre terminando no label [vraw]
+  let videoChain: string
+  let trimmedAudioInComplex = false
 
   if (layout === 'split') {
     const crop = `crop=iw:iw*${H / 2}/${W}`
     const halfH = Math.round(H / 2)
-    const topFilter = `[0:v]trim=start=${startTime}:end=${endTime},setpts=PTS-STARTPTS,${crop},scale=${W}:${halfH}:flags=lanczos`
-    const botFilter = `[0:v]trim=start=${startTime}:end=${endTime},setpts=PTS-STARTPTS,${crop},scale=${W}:${halfH}:flags=lanczos`
-    const fadeFilters = transition !== 'none'
-      ? `,fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${Math.max(0, duration - fadeDur)}:d=${fadeDur}`
-      : ''
-    const captionPart = captionFilter ? `,${captionFilter}` : ''
-
-    const filterComplex = `${topFilter}${fadeFilters}[top];${botFilter}${fadeFilters}[bot];[top][bot]vstack,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black${captionPart}[vout]`
-
-    args = hasMusicFile
-      ? [
-          '-i', inputName, '-i', musicName,
-          '-filter_complex', `${filterComplex};[0:a]atrim=start=${startTime}:end=${endTime},asetpts=PTS-STARTPTS[oa];[1:a]aloop=loop=-1:size=44100[ml];[oa][ml]amix=inputs=2:weights=1 0.15[aout]`,
-          '-map', '[vout]', '-map', '[aout]',
-          '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '128k',
-          '-t', String(duration), '-movflags', '+faststart', outputName,
-        ]
-      : [
-          '-i', inputName,
-          '-filter_complex', filterComplex,
-          '-map', '[vout]', '-ss', String(startTime), '-t', String(duration), '-map', '0:a',
-          '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '128k',
-          '-movflags', '+faststart', outputName,
-        ]
+    const trimPrefix = `[0:v]trim=start=${startTime}:end=${endTime},setpts=PTS-STARTPTS,`
+    const topFilter = `${trimPrefix}${crop},scale=${W}:${halfH}:flags=lanczos${fadeFilters}[top]`
+    const botFilter = `${trimPrefix}${crop},scale=${W}:${halfH}:flags=lanczos${fadeFilters}[bot]`
+    videoChain = `${topFilter};${botFilter};[top][bot]vstack,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black[vraw]`
+    trimmedAudioInComplex = true
+  } else if (layout === 'react') {
+    const trimPrefix = `[0:v]trim=start=${startTime}:end=${endTime},setpts=PTS-STARTPTS,`
+    const reactComplex = buildReactFilterComplex(W, H, faceTrack, trimPrefix).replace('[vout]', `${fadeFilters}[vraw]`)
+    videoChain = reactComplex
+    trimmedAudioInComplex = true
   } else {
-    let vf = buildVideoFilter(layout, W, H, duration, transition, faceTrack)
-    if (captionFilter) vf = vf ? `${vf},${captionFilter}` : captionFilter
-    const needsEncode = layout === 'fill' || layout === 'auto' || transition !== 'none' || hasMusicFile || !!captionFilter
-
-    if (hasMusicFile) {
-      args = [
-        '-ss', String(startTime), '-t', String(duration), '-i', inputName, '-i', musicName,
-        '-filter_complex', `[0:v]${vf}[vout];[0:a][1:a]amix=inputs=2:weights=1 0.15[aout]`,
-        '-map', '[vout]', '-map', '[aout]',
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '128k',
-        '-movflags', '+faststart', outputName,
-      ]
-    } else if (needsEncode) {
-      args = [
-        '-ss', String(startTime), '-t', String(duration), '-i', inputName,
-        '-vf', vf,
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '128k',
-        '-movflags', '+faststart', outputName,
-      ]
-    } else {
-      args = [
-        '-ss', String(startTime), '-t', String(duration), '-i', inputName,
-        '-c', 'copy', '-movflags', '+faststart', outputName,
-      ]
-    }
+    let vf = layout === 'letterbox'
+      ? `scale=${W}:-2:flags=lanczos,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black`
+      : buildFillFilter(W, H, faceTrack)
+    if (transition !== 'none') vf += fadeFilters
+    videoChain = `[0:v]${vf}[vraw]`
   }
+
+  if (captionFilter) videoChain += `;[vraw]${captionFilter}[vcap]`
+  let finalVideoLabel = captionFilter ? '[vcap]' : '[vraw]'
+
+  if (hasWatermark) {
+    const margin = Math.round(W * 0.04)
+    const wmSize = Math.round(W * 0.12)
+    videoChain += `;[${hasMusicFile ? '2' : '1'}:v]scale=${wmSize}:-1[wm];${finalVideoLabel}[wm]overlay=W-w-${margin}:H-h-${margin}:format=auto[vfinal]`
+    finalVideoLabel = '[vfinal]'
+  }
+
+  const inputs = ['-i', inputName]
+  if (hasMusicFile) inputs.push('-i', musicName)
+  if (hasWatermark) inputs.push('-i', watermarkName)
+
+  let audioFilter = ''
+  let mapArgs: string[]
+
+  if (trimmedAudioInComplex) {
+    if (hasMusicFile) {
+      audioFilter = `;[0:a]atrim=start=${startTime}:end=${endTime},asetpts=PTS-STARTPTS[oa];[1:a]aloop=loop=-1:size=44100[ml];[oa][ml]amix=inputs=2:weights=1 0.15[aout]`
+      mapArgs = ['-map', finalVideoLabel, '-map', '[aout]', '-t', String(duration)]
+    } else {
+      mapArgs = ['-map', finalVideoLabel, '-ss', String(startTime), '-t', String(duration), '-map', '0:a']
+    }
+  } else if (hasMusicFile) {
+    audioFilter = `;[0:a][1:a]amix=inputs=2:weights=1 0.15[aout]`
+    mapArgs = ['-ss', String(startTime), '-t', String(duration), '-map', finalVideoLabel, '-map', '[aout]']
+  } else {
+    mapArgs = ['-ss', String(startTime), '-t', String(duration), '-map', finalVideoLabel, '-map', '0:a']
+  }
+
+  const args = [
+    ...inputs,
+    '-filter_complex', videoChain + audioFilter,
+    ...mapArgs,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '20',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-movflags', '+faststart',
+    outputName,
+  ]
 
   try {
     await ff.exec(args)
@@ -276,6 +295,7 @@ export async function cutVideoClip(
   const data = await ff.readFile(outputName)
   await ff.deleteFile(inputName)
   if (hasMusicFile) await ff.deleteFile(musicName)
+  if (hasWatermark) await ff.deleteFile(watermarkName)
   await ff.deleteFile(outputName)
   onProgress?.(100)
 

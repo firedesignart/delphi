@@ -1,12 +1,13 @@
 'use client'
 import { useState, useRef } from 'react'
-import { X, Download, Loader2, Music, Zap, Type, ScanFace } from 'lucide-react'
+import { X, Download, Loader2, Music, Zap, Type, ScanFace, Sparkle } from 'lucide-react'
 import type { Clip } from '@/types'
 import { cutVideoClip } from '@/lib/ffmpeg'
 import { trackFaces, type FaceTrackPoint } from '@/lib/face-tracking'
+import { getDelphiWatermarkPng } from '@/lib/watermark'
 import { formatDuration, cn } from '@/lib/utils'
 
-export type VideoLayout = 'fill' | 'letterbox' | 'split' | 'auto'
+export type VideoLayout = 'fill' | 'letterbox' | 'split' | 'auto' | 'react'
 export type Transition = 'none' | 'fade' | 'dissolve'
 export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9'
 
@@ -19,6 +20,7 @@ const ASPECT_RATIOS: { id: AspectRatio; label: string; w: number; h: number }[] 
 
 const LAYOUTS: { id: VideoLayout; label: string; desc: string }[] = [
   { id: 'auto', label: 'Seguir Rosto (IA)', desc: 'Rastreia e centraliza quem fala' },
+  { id: 'react', label: 'React', desc: 'Fundo desfocado + recorte nítido' },
   { id: 'fill', label: 'Preenchido', desc: 'Tela toda, crop central fixo' },
   { id: 'letterbox', label: 'Com Barras', desc: 'Vídeo original, barras pretas' },
   { id: 'split', label: 'Split Screen', desc: 'Vídeo em cima e embaixo' },
@@ -61,6 +63,7 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
   const [musicGenre, setMusicGenre] = useState<string>(suggestedMusic !== 'none' ? suggestedMusic : 'none')
   const [captions, setCaptions] = useState(true)
   const [burnCaptions, setBurnCaptions] = useState(true)
+  const [watermark, setWatermark] = useState(false)
   const [cutting, setCutting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [stage, setStage] = useState<'tracking' | 'exporting'>('exporting')
@@ -82,7 +85,7 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
       const ratio = ASPECT_RATIOS.find((r) => r.id === aspectRatio)!
 
       let faceTrack: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number } | undefined
-      if (layout === 'auto') {
+      if (layout === 'auto' || layout === 'react') {
         setStage('tracking')
         const video = document.createElement('video')
         video.src = URL.createObjectURL(videoFile)
@@ -97,6 +100,13 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
         setProgress(0)
       }
 
+      let watermarkPng: Blob | undefined
+      if (watermark) {
+        try {
+          watermarkPng = await getDelphiWatermarkPng()
+        } catch { /* segue sem marca d'água se falhar */ }
+      }
+
       const blob = await cutVideoClip(
         videoFile,
         clip.startTime,
@@ -108,7 +118,8 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
         burnCaptions ? clip.transcript : undefined,
         setProgress,
         ctrl.signal,
-        faceTrack
+        faceTrack,
+        watermarkPng
       )
 
       const url = URL.createObjectURL(blob)
@@ -179,6 +190,7 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
                   <button key={l.id} onClick={() => setLayout(l.id)}
                     className={cn('rounded-xl border-2 px-3 py-2.5 text-left transition-all flex items-start gap-2', layout === l.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
                     {l.id === 'auto' && <ScanFace size={14} className={cn('mt-0.5 shrink-0', layout === l.id ? 'text-white' : 'text-[#888]')} />}
+                    {l.id === 'react' && <Sparkle size={14} className={cn('mt-0.5 shrink-0', layout === l.id ? 'text-white' : 'text-[#888]')} />}
                     <div>
                       <p className={cn('text-xs font-medium', layout === l.id ? 'text-white' : 'text-[#111]')}>{l.label}</p>
                       <p className={cn('text-[10px] mt-0.5', layout === l.id ? 'text-white/60' : 'text-[#999]')}>{l.desc}</p>
@@ -246,6 +258,18 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
             <button onClick={() => setCaptions(!captions)}
               className={cn('w-10 h-6 rounded-full transition-colors relative', captions ? 'bg-[#111]' : 'bg-[#ddd]')}>
               <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', captions ? 'left-5' : 'left-1')} />
+            </button>
+          </div>
+
+          {/* Watermark toggle */}
+          <div className="flex items-center justify-between py-1 border-t border-[#f0f0f0] pt-3">
+            <div>
+              <p className="text-sm font-medium text-[#111]">Marca d'água Delphi</p>
+              <p className="text-xs text-[#999]">Símbolo da marca no canto do vídeo</p>
+            </div>
+            <button onClick={() => setWatermark(!watermark)}
+              className={cn('w-10 h-6 rounded-full transition-colors relative', watermark ? 'bg-[#111]' : 'bg-[#ddd]')}>
+              <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', watermark ? 'left-5' : 'left-1')} />
             </button>
           </div>
 
