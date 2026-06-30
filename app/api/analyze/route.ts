@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import Groq from 'groq-sdk'
 import { Clip } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -10,19 +10,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No video file provided' }, { status: 400 })
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey || apiKey === 'your_openai_key_here') {
-    return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 503 })
+  const apiKey = process.env.GROQ_API_KEY
+  if (!apiKey) {
+    return NextResponse.json({ error: 'GROQ_API_KEY not configured' }, { status: 503 })
   }
 
-  const openai = new OpenAI({ apiKey })
+  const groq = new Groq({ apiKey })
 
-  // 1. Transcribe with Whisper
-  let transcription: OpenAI.Audio.Transcription
+  // 1. Transcrever com Whisper via Groq
+  let transcription: Groq.Audio.Transcription
   try {
-    transcription = await openai.audio.transcriptions.create({
+    transcription = await groq.audio.transcriptions.create({
       file,
-      model: 'whisper-1',
+      model: 'whisper-large-v3',
       response_format: 'verbose_json',
       timestamp_granularities: ['segment'],
     })
@@ -34,14 +34,13 @@ export async function POST(req: NextRequest) {
   const fullText = transcription.text
   const segments = (transcription as any).segments ?? []
 
-  // Build segment map for clip extraction
   const segmentMap = segments.map((s: any) => ({
     start: s.start,
     end: s.end,
     text: s.text,
   }))
 
-  // 2. Detect viral clips with GPT-4o
+  // 2. Detectar clips virais com LLaMA via Groq
   const prompt = `Você é um especialista em YouTube Shorts virais. Analisando a transcrição abaixo, identifique de 3 a 6 momentos que têm alto potencial viral para Shorts de 15 a 60 segundos.
 
 TRANSCRIÇÃO COMPLETA:
@@ -61,8 +60,7 @@ Para cada clip, retorne um JSON array com este formato exato:
     "hook_score": 85,
     "emotion_score": 72,
     "narrative_score": 68,
-    "energy_score": 90,
-    "reason": "por que esse momento é viral"
+    "energy_score": 90
   }
 ]
 
@@ -76,8 +74,8 @@ Regras:
   let clips: Clip[] = []
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
     })
@@ -104,13 +102,9 @@ Regras:
       createdAt: new Date().toISOString(),
     }))
   } catch (err) {
-    console.error('GPT-4o error:', err)
+    console.error('LLaMA error:', err)
     return NextResponse.json({ error: 'Clip detection failed' }, { status: 500 })
   }
 
   return NextResponse.json({ clips, transcript: fullText })
-}
-
-export const config = {
-  api: { bodyParser: false },
 }
