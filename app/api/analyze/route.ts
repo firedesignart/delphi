@@ -3,35 +3,18 @@ import Groq from 'groq-sdk'
 import { Clip } from '@/types'
 
 export async function POST(req: NextRequest) {
-  const formData = await req.formData()
-  const file = (formData.get('audio') ?? formData.get('video')) as File | null
+  const body = await req.json()
+  const fullText: string | undefined = body.transcript
+  const segmentMap: { start: number; end: number; text: string }[] = body.segments ?? []
 
-  if (!file) return NextResponse.json({ error: 'No audio file provided' }, { status: 400 })
+  if (!fullText) return NextResponse.json({ error: 'No transcript provided' }, { status: 400 })
 
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'GROQ_API_KEY not configured' }, { status: 503 })
 
   const groq = new Groq({ apiKey })
 
-  // 1. Transcrever com Whisper
-  let transcription: Groq.Audio.Transcription
-  try {
-    transcription = await groq.audio.transcriptions.create({
-      file,
-      model: 'whisper-large-v3',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['segment'],
-    })
-  } catch (err) {
-    console.error('Whisper error:', err)
-    return NextResponse.json({ error: 'Transcription failed' }, { status: 500 })
-  }
-
-  const fullText = transcription.text
-  const segments = (transcription as any).segments ?? []
-  const segmentMap = segments.map((s: any) => ({ start: s.start, end: s.end, text: s.text }))
-
-  // 2. Detectar clips + tema com LLaMA
+  // Detectar clips + tema com LLaMA
   const prompt = `Você é um especialista em YouTube Shorts virais. Analise a transcrição abaixo e retorne um JSON com dois campos: "theme" e "clips".
 
 TRANSCRIÇÃO:

@@ -1,5 +1,6 @@
 import type { Clip, AnalysisProgress, VideoTheme } from '@/types'
 import { extractAudio } from './ffmpeg'
+import { transcribeAudio } from './groq-client'
 
 export type AnalysisResult = { clips: Clip[]; theme: VideoTheme; isMock?: boolean; errorReason?: string }
 
@@ -23,17 +24,20 @@ export async function* analyzeVideo(
 
   onProgress({ stage: 'transcribing', percent: 30, message: 'Transcrevendo com Whisper...' })
 
-  // Try real API first — sends only the audio (muito menor que o vídeo)
   if (audioBlob) {
     try {
-      const form = new FormData()
-      form.append('audio', audioBlob, 'audio.mp3')
+      // Transcrição roda direto no navegador → Groq (evita limite de upload da Vercel)
+      const { text, segments } = await transcribeAudio(audioBlob)
 
-      const res = await fetch('/api/analyze', { method: 'POST', body: form })
+      onProgress({ stage: 'analyzing', percent: 60, message: 'IA detectando melhores momentos...' })
+
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: text, segments }),
+      })
 
       if (res.ok) {
-        onProgress({ stage: 'analyzing', percent: 60, message: 'IA detectando melhores momentos...' })
-        await delay(400)
         onProgress({ stage: 'scoring', percent: 85, message: 'Calculando scores de retenção...' })
         await delay(300)
         onProgress({ stage: 'done', percent: 100, message: 'Análise concluída!' })
@@ -46,12 +50,12 @@ export async function* analyzeVideo(
         errorReason = `Falha na análise (${res.status}): ${errBody?.error ?? 'erro desconhecido'}`
       }
     } catch (err: any) {
-      console.error('Analyze fetch failed:', err)
-      errorReason = `Falha de conexão com a API: ${err?.message ?? 'erro desconhecido'}`
+      console.error('Transcription/analyze failed:', err)
+      errorReason = err?.message ?? 'erro desconhecido na transcrição'
     }
   }
 
-  // Fallback: mock (quando a API falha ou GROQ_API_KEY não está configurada)
+  // Fallback: mock (quando a transcrição ou análise falha)
   onProgress({ stage: 'analyzing', percent: 55, message: 'IA detectando melhores momentos...' })
   await delay(800)
   onProgress({ stage: 'scoring', percent: 80, message: 'Calculando scores de retenção...' })
@@ -138,7 +142,6 @@ function generateMockClips(filename: string): Clip[] {
       createdAt: new Date().toISOString(),
     }
   })
-  // mark best
   const best = clips.reduce((a, b) => (a.totalScore > b.totalScore ? a : b))
   best.isBest = true
   return clips
