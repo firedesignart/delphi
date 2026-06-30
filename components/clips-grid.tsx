@@ -229,11 +229,14 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-[#111]">Shorts detectados</h2>
-          <p className="text-sm text-[#888]">
-            {allClips.length} clips de {projects.length} vídeo{projects.length > 1 ? 's' : ''}
-          </p>
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-full bg-[#111] text-white text-xs font-bold flex items-center justify-center shrink-0">3</div>
+          <div>
+            <span className="text-xs font-semibold text-[#999] uppercase tracking-wide block">Shorts gerados</span>
+            <h2 className="text-lg font-semibold text-[#111] tracking-tight">
+              {allClips.length} clips de {projects.length} vídeo{projects.length > 1 ? 's' : ''}
+            </h2>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {approvedCount > 0 && (
@@ -249,12 +252,11 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
       </div>
 
       {/* Projects with dividers */}
-      <div className="space-y-10">
+      <div className="space-y-6">
         {projects.map((project) => (
-          <div key={project.id}>
-            {/* Project divider */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex-1 h-px bg-[#e5e5e5]" />
+          <div key={project.id} className="bg-white border border-[#ececec] rounded-2xl p-5 sm:p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+            {/* Project header */}
+            <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-[#111] max-w-xs truncate">{project.title}</span>
                 {project.theme && (
@@ -266,7 +268,12 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
                   <span className="text-[10px] text-[#999] hidden md:inline">{project.theme.mood}</span>
                 )}
               </div>
-              <div className="flex-1 h-px bg-[#e5e5e5]" />
+              <button
+                onClick={() => onProjectClipsChange(project.id, project.clips.map((c) => ({ ...c, status: 'APPROVED' as const })))}
+                className="text-xs font-medium text-[#888] hover:text-[#111] transition-colors shrink-0"
+              >
+                Aprovar todos
+              </button>
             </div>
 
             {/* Format bar — define o formato antes de exportar qualquer clip deste vídeo */}
@@ -296,16 +303,6 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
                   )
                 })}
               </div>
-            </div>
-
-            {/* Approve all for this project */}
-            <div className="flex justify-end mb-3">
-              <button
-                onClick={() => onProjectClipsChange(project.id, project.clips.map((c) => ({ ...c, status: 'APPROVED' as const })))}
-                className="text-xs text-[#888] hover:text-[#111] transition-colors"
-              >
-                Aprovar todos deste vídeo
-              </button>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

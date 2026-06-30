@@ -57,7 +57,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[#f7f7f8]">
       <Sidebar
         activeStep={step}
         onStepClick={setStep}
@@ -66,38 +66,47 @@ export default function Home() {
       />
 
       <main className="flex-1 overflow-auto">
-        <header className="border-b border-[#e5e5e5] bg-white px-8 py-4 sticky top-0 z-10">
-          <h1 className="text-lg font-semibold text-[#111]">{stepTitles[step]?.title}</h1>
-          <p className="text-sm text-[#888]">{stepTitles[step]?.subtitle}</p>
+        <header className="border-b border-[#ececec] bg-white/80 backdrop-blur px-8 py-4 sticky top-0 z-10">
+          <h1 className="text-lg font-semibold text-[#111] tracking-tight">{stepTitles[step]?.title}</h1>
+          <p className="text-sm text-[#999]">{stepTitles[step]?.subtitle}</p>
         </header>
 
         <div className="p-8">
           {step === 1 && (
             <div className="max-w-2xl mx-auto">
-              <UploadZone onFileSelected={handleFileSelected} onLocalFileSelected={handleLocalFileSelected} />
-              {hasVideo && (
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={() => setStep(2)}
-                    className="bg-[#111] text-white px-6 py-3 rounded-lg font-medium hover:bg-[#222] transition-colors"
-                  >
-                    Analisar com IA →
-                  </button>
+              <div className="bg-white border border-[#ececec] rounded-2xl p-6 sm:p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                <div className="flex items-center gap-2.5 mb-6">
+                  <div className="w-6 h-6 rounded-full bg-[#111] text-white text-xs font-bold flex items-center justify-center shrink-0">1</div>
+                  <span className="text-xs font-semibold text-[#999] uppercase tracking-wide">Envie seu conteúdo</span>
                 </div>
-              )}
+
+                <UploadZone onFileSelected={handleFileSelected} onLocalFileSelected={handleLocalFileSelected} />
+
+                {hasVideo && (
+                  <div className="mt-6 flex justify-end">
+                    <button
+                      onClick={() => setStep(2)}
+                      className="bg-[#111] text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-[#222] transition-colors"
+                    >
+                      Continuar →
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {!hasVideo && (
-                <div className="mt-8 grid grid-cols-3 gap-4">
+                <div className="mt-6 grid grid-cols-3 gap-4">
                   {[
                     { n: '1', title: 'Envie seu vídeo', desc: 'Upload, link ou vídeo grande do seu PC' },
                     { n: '2', title: 'IA analisa', desc: 'Detecta os melhores momentos automaticamente' },
                     { n: '3', title: 'Publique', desc: 'Agende direto no YouTube com 1 clique' },
                   ].map((item) => (
-                    <div key={item.n} className="bg-white border border-[#e5e5e5] rounded-xl p-4">
-                      <div className="w-8 h-8 rounded-lg bg-[#f0f0f0] flex items-center justify-center text-sm font-bold text-[#555] mb-3">
+                    <div key={item.n} className="bg-white border border-[#ececec] rounded-2xl p-4">
+                      <div className="w-7 h-7 rounded-lg bg-[#f5f5f5] flex items-center justify-center text-xs font-bold text-[#888] mb-3">
                         {item.n}
                       </div>
-                      <div className="font-medium text-[#111] mb-1">{item.title}</div>
-                      <div className="text-sm text-[#888]">{item.desc}</div>
+                      <div className="font-medium text-[#111] text-sm mb-1">{item.title}</div>
+                      <div className="text-xs text-[#999]">{item.desc}</div>
                     </div>
                   ))}
                 </div>
@@ -107,7 +116,13 @@ export default function Home() {
 
           {step === 2 && hasVideo && (
             <div className="max-w-2xl mx-auto">
-              <AnalysisView file={videoFile} localFilename={localFilename ?? undefined} onComplete={handleAnalysisComplete} />
+              <div className="bg-white border border-[#ececec] rounded-2xl p-6 sm:p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                <div className="flex items-center gap-2.5 mb-6">
+                  <div className="w-6 h-6 rounded-full bg-[#111] text-white text-xs font-bold flex items-center justify-center shrink-0">2</div>
+                  <span className="text-xs font-semibold text-[#999] uppercase tracking-wide">Análise com IA</span>
+                </div>
+                <AnalysisView file={videoFile} localFilename={localFilename ?? undefined} onComplete={handleAnalysisComplete} />
+              </div>
             </div>
           )}
 
@@ -124,7 +139,13 @@ export default function Home() {
 
           {step === 4 && (
             <div className="max-w-2xl mx-auto">
-              <PublishPanel clips={allClips} />
+              <div className="bg-white border border-[#ececec] rounded-2xl p-6 sm:p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                <div className="flex items-center gap-2.5 mb-6">
+                  <div className="w-6 h-6 rounded-full bg-[#111] text-white text-xs font-bold flex items-center justify-center shrink-0">4</div>
+                  <span className="text-xs font-semibold text-[#999] uppercase tracking-wide">Revisar e publicar</span>
+                </div>
+                <PublishPanel clips={allClips} />
+              </div>
             </div>
           )}
         </div>

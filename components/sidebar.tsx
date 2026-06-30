@@ -39,18 +39,18 @@ export function Sidebar({ activeStep, onStepClick, hasVideo, hasClips }: Sidebar
     <>
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
 
-      <aside className="w-[220px] min-h-screen bg-[#111] flex flex-col">
+      <aside className="w-[200px] min-h-screen bg-[#111] flex flex-col shrink-0">
         {/* Logo */}
-        <div className="px-5 py-6 border-b border-white/10 flex items-center gap-2.5">
-          <img src="/brand/logo-symbol.svg" alt="" className="w-7 h-7 brightness-0 invert" />
+        <div className="px-4 py-5 border-b border-white/[0.08] flex items-center gap-2.5">
+          <img src="/brand/logo-symbol.svg" alt="" className="w-6 h-6 brightness-0 invert" />
           <div className="leading-tight">
-            <div className="text-white font-bold text-base">Delphi</div>
-            <div className="text-white/40 text-[9px] tracking-wide">CREATE · EDIT · PUBLISH</div>
+            <div className="text-white font-semibold text-sm tracking-tight">Delphi</div>
+            <div className="text-white/35 text-[8px] tracking-wider">CREATE · EDIT · PUBLISH</div>
           </div>
         </div>
 
         {/* Nav steps */}
-        <nav className="flex-1 px-3 py-6 flex flex-col gap-1">
+        <nav className="flex-1 px-2.5 py-5 flex flex-col gap-0.5">
           {steps.map((step) => {
             const accessible = isAccessible(step.id)
             const active = activeStep === step.id
@@ -62,28 +62,28 @@ export function Sidebar({ activeStep, onStepClick, hasVideo, hasClips }: Sidebar
                 onClick={() => accessible && onStepClick(step.id)}
                 disabled={!accessible}
                 className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-150',
+                  'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-all duration-150',
                   active
                     ? 'bg-white text-[#111]'
                     : accessible
-                    ? 'text-white/70 hover:bg-white/10 hover:text-white'
-                    : 'text-white/25 cursor-not-allowed'
+                    ? 'text-white/60 hover:bg-white/[0.06] hover:text-white'
+                    : 'text-white/20 cursor-not-allowed'
                 )}
               >
                 <div
                   className={cn(
-                    'w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold shrink-0',
-                    active ? 'bg-[#111] text-white' : 'bg-white/10'
+                    'w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0',
+                    active ? 'bg-[#111] text-white' : 'bg-white/[0.08]'
                   )}
                 >
                   {step.id}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium leading-tight">{step.label}</div>
+                  <div className="text-[13px] font-medium leading-tight">{step.label}</div>
                   <div
                     className={cn(
-                      'text-xs leading-tight',
-                      active ? 'text-[#555]' : 'text-white/40'
+                      'text-[10px] leading-tight',
+                      active ? 'text-[#999]' : 'text-white/35'
                     )}
                   >
                     {step.sublabel}
@@ -95,12 +95,12 @@ export function Sidebar({ activeStep, onStepClick, hasVideo, hasClips }: Sidebar
         </nav>
 
         {/* Bottom */}
-        <div className="px-3 py-4 border-t border-white/10">
+        <div className="px-2.5 py-3 border-t border-white/[0.08]">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all text-sm"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-white/35 hover:text-white hover:bg-white/[0.06] transition-all text-[13px]"
           >
-            <Settings size={16} />
+            <Settings size={14} />
             Configurações
           </button>
         </div>
