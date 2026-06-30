@@ -55,12 +55,14 @@ interface LayoutPickerProps {
   videoFile: File | null
   localFilename?: string
   suggestedMusic?: string
+  initialLayout?: VideoLayout
+  initialAspectRatio?: AspectRatio
   onClose: () => void
 }
 
-export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 'none', onClose }: LayoutPickerProps) {
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16')
-  const [layout, setLayout] = useState<VideoLayout>(localFilename ? 'fill' : 'auto')
+export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 'none', initialLayout, initialAspectRatio, onClose }: LayoutPickerProps) {
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(initialAspectRatio ?? '9:16')
+  const [layout, setLayout] = useState<VideoLayout>(initialLayout ?? (localFilename ? 'fill' : 'auto'))
   const [transition, setTransition] = useState<Transition>('fade')
   const [musicGenre, setMusicGenre] = useState<string>(suggestedMusic !== 'none' ? suggestedMusic : 'none')
   const [captions, setCaptions] = useState(true)

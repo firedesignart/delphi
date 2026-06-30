@@ -1,12 +1,27 @@
 'use client'
 import { useState } from 'react'
-import { Check, X, Clock, Zap, Heart, TrendingUp, Star, Download, Play, Plus } from 'lucide-react'
+import { Check, X, Clock, Zap, Heart, TrendingUp, Star, Download, Play, Plus, ScanFace, Sparkle, Rows3, Square } from 'lucide-react'
 import type { Clip, VideoProject } from '@/types'
 import { cn, formatDuration, scoreColor, scoreBg } from '@/lib/utils'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
-import { LayoutPicker } from './layout-picker'
+import { LayoutPicker, type VideoLayout, type AspectRatio } from './layout-picker'
 import { ClipDetailModal } from './clip-detail-modal'
+
+const FORMAT_LAYOUTS: { id: VideoLayout; label: string; icon: any; localOk: boolean }[] = [
+  { id: 'auto', label: 'Seguir Rosto', icon: ScanFace, localOk: false },
+  { id: 'react', label: 'React', icon: Sparkle, localOk: false },
+  { id: 'fill', label: 'Preenchido', icon: Square, localOk: true },
+  { id: 'letterbox', label: 'Com Barras', icon: Square, localOk: true },
+  { id: 'split', label: 'Split Screen', icon: Rows3, localOk: true },
+]
+
+const FORMAT_RATIOS: { id: AspectRatio; label: string }[] = [
+  { id: '9:16', label: '9:16' },
+  { id: '1:1', label: '1:1' },
+  { id: '4:5', label: '4:5' },
+  { id: '16:9', label: '16:9' },
+]
 
 interface ClipsGridProps {
   projects: VideoProject[]
@@ -27,11 +42,13 @@ function ScoreBar({ value, icon: Icon }: { value: number; icon: any }) {
   )
 }
 
-function ClipCard({ clip, videoFile, localFilename, suggestedMusic, onApprove, onReject }: {
+function ClipCard({ clip, videoFile, localFilename, suggestedMusic, defaultLayout, defaultAspectRatio, onApprove, onReject }: {
   clip: Clip
   videoFile: File | null
   localFilename?: string
   suggestedMusic?: string
+  defaultLayout: VideoLayout
+  defaultAspectRatio: AspectRatio
   onApprove: () => void
   onReject: () => void
 }) {
@@ -54,7 +71,15 @@ function ClipCard({ clip, videoFile, localFilename, suggestedMusic, onApprove, o
         />
       )}
       {exporting && (
-        <LayoutPicker clip={clip} videoFile={videoFile} localFilename={localFilename} suggestedMusic={suggestedMusic} onClose={() => setExporting(false)} />
+        <LayoutPicker
+          clip={clip}
+          videoFile={videoFile}
+          localFilename={localFilename}
+          suggestedMusic={suggestedMusic}
+          initialLayout={defaultLayout}
+          initialAspectRatio={defaultAspectRatio}
+          onClose={() => setExporting(false)}
+        />
       )}
 
       <div className={cn(
@@ -145,6 +170,26 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
   const allClips = projects.flatMap((p) => p.clips)
   const approvedCount = allClips.filter((c) => c.status === 'APPROVED').length
 
+  const [formatByProject, setFormatByProject] = useState<Record<string, { layout: VideoLayout; ratio: AspectRatio }>>({})
+
+  function getFormat(project: VideoProject): { layout: VideoLayout; ratio: AspectRatio } {
+    return formatByProject[project.id] ?? {
+      layout: project.localFilename ? 'fill' : 'auto',
+      ratio: '9:16',
+    }
+  }
+
+  function setFormat(projectId: string, patch: Partial<{ layout: VideoLayout; ratio: AspectRatio }>) {
+    setFormatByProject((prev) => ({
+      ...prev,
+      [projectId]: { ...getFormatFor(prev, projectId), ...patch },
+    }))
+  }
+
+  function getFormatFor(map: Record<string, { layout: VideoLayout; ratio: AspectRatio }>, projectId: string) {
+    return map[projectId] ?? { layout: 'auto' as VideoLayout, ratio: '9:16' as AspectRatio }
+  }
+
   return (
     <div>
       {/* Header */}
@@ -189,6 +234,35 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
               <div className="flex-1 h-px bg-[#e5e5e5]" />
             </div>
 
+            {/* Format bar — define o formato antes de exportar qualquer clip deste vídeo */}
+            <div className="bg-[#fafafa] border border-[#eee] rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3">
+              <span className="text-xs font-medium text-[#888] shrink-0">Formato padrão:</span>
+              <div className="flex gap-1 flex-wrap">
+                {FORMAT_RATIOS.map((r) => (
+                  <button key={r.id} onClick={() => setFormat(project.id, { ratio: r.id })}
+                    className={cn('px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
+                      getFormat(project).ratio === r.id ? 'bg-[#111] text-white' : 'bg-white border border-[#e5e5e5] text-[#666] hover:border-[#ccc]')}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+              <div className="w-px h-5 bg-[#e5e5e5] hidden sm:block" />
+              <div className="flex gap-1 flex-wrap">
+                {FORMAT_LAYOUTS.filter((l) => !project.localFilename || l.localOk).map((l) => {
+                  const Icon = l.icon
+                  const active = getFormat(project).layout === l.id
+                  return (
+                    <button key={l.id} onClick={() => setFormat(project.id, { layout: l.id })}
+                      className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
+                        active ? 'bg-[#111] text-white' : 'bg-white border border-[#e5e5e5] text-[#666] hover:border-[#ccc]')}>
+                      <Icon size={11} />
+                      {l.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             {/* Approve all for this project */}
             <div className="flex justify-end mb-3">
               <button
@@ -207,6 +281,8 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
                   videoFile={project.videoFile}
                   localFilename={project.localFilename}
                   suggestedMusic={project.theme?.music_suggestion}
+                  defaultLayout={getFormat(project).layout}
+                  defaultAspectRatio={getFormat(project).ratio}
                   onApprove={() => onProjectClipsChange(project.id, project.clips.map((c) => c.id === clip.id ? { ...c, status: 'APPROVED' as const } : c))}
                   onReject={() => onProjectClipsChange(project.id, project.clips.map((c) => c.id === clip.id ? { ...c, status: 'REJECTED' as const } : c))}
                 />

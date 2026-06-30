@@ -220,11 +220,13 @@ export async function cutVideoClip(
   let trimmedAudioInComplex = false
 
   if (layout === 'split') {
-    const crop = `crop=iw:iw*${H / 2}/${W}`
+    // Corta a metade ESQUERDA do quadro original para cima e a DIREITA para baixo —
+    // separa duas pessoas lado a lado em vez de duplicar o mesmo recorte central.
     const halfH = Math.round(H / 2)
+    const cropExpr = `crop=ih*${W}/${halfH}:ih`
     const trimPrefix = `[0:v]trim=start=${startTime}:end=${endTime},setpts=PTS-STARTPTS,`
-    const topFilter = `${trimPrefix}${crop},scale=${W}:${halfH}:flags=lanczos${fadeFilters}[top]`
-    const botFilter = `${trimPrefix}${crop},scale=${W}:${halfH}:flags=lanczos${fadeFilters}[bot]`
+    const topFilter = `${trimPrefix}${cropExpr}:0:0,scale=${W}:${halfH}:flags=lanczos${fadeFilters}[top]`
+    const botFilter = `${trimPrefix}${cropExpr}:in_w-out_w:0,scale=${W}:${halfH}:flags=lanczos${fadeFilters}[bot]`
     videoChain = `${topFilter};${botFilter};[top][bot]vstack,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black[vraw]`
     trimmedAudioInComplex = true
   } else if (layout === 'react') {
