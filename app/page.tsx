@@ -5,24 +5,41 @@ import { UploadZone } from '@/components/upload-zone'
 import { AnalysisView } from '@/components/analysis-view'
 import { ClipsGrid } from '@/components/clips-grid'
 import { PublishPanel } from '@/components/publish-panel'
-import type { Clip } from '@/types'
+import type { Clip, VideoProject } from '@/types'
 
 export default function Home() {
   const [step, setStep] = useState(1)
   const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [clips, setClips] = useState<Clip[]>([])
+  const [projects, setProjects] = useState<VideoProject[]>([])
+
+  const allClips = projects.flatMap((p) => p.clips)
 
   const handleFileSelected = useCallback((file: File) => {
     setVideoFile(file)
   }, [])
 
-  const handleAnalysisComplete = useCallback((detectedClips: Clip[]) => {
-    setClips(detectedClips)
-    setStep(3)
-  }, [])
+  const handleAnalysisComplete = useCallback(
+    (detectedClips: Clip[], theme?: any) => {
+      if (!videoFile) return
+      const project: VideoProject = {
+        id: `proj-${Date.now()}`,
+        title: videoFile.name.replace(/\.[^/.]+$/, ''),
+        videoFile,
+        clips: detectedClips,
+        theme,
+      }
+      setProjects((prev) => [...prev, project])
+      setStep(3)
+    },
+    [videoFile]
+  )
+
+  function updateProjectClips(projectId: string, clips: Clip[]) {
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, clips } : p)))
+  }
 
   const stepTitles: Record<number, { title: string; subtitle: string }> = {
-    1: { title: 'Upload de vídeo', subtitle: 'Envie o vídeo que deseja transformar em Shorts' },
+    1: { title: 'Upload de vídeo', subtitle: 'Envie o vídeo ou cole um link para começar' },
     2: { title: 'Análise com IA', subtitle: 'Detectando os melhores momentos automaticamente' },
     3: { title: 'Shorts gerados', subtitle: 'Revise e aprove os clips detectados pela IA' },
     4: { title: 'Publicar', subtitle: 'Agende e publique no YouTube' },
@@ -34,7 +51,7 @@ export default function Home() {
         activeStep={step}
         onStepClick={setStep}
         hasVideo={!!videoFile}
-        hasClips={clips.length > 0}
+        hasClips={allClips.length > 0}
       />
 
       <main className="flex-1 overflow-auto">
@@ -60,7 +77,7 @@ export default function Home() {
               {!videoFile && (
                 <div className="mt-8 grid grid-cols-3 gap-4">
                   {[
-                    { n: '1', title: 'Envie seu vídeo', desc: 'MP4, MOV ou WebM até 20 GB' },
+                    { n: '1', title: 'Envie seu vídeo', desc: 'Upload ou link do YouTube, Rumble e mais' },
                     { n: '2', title: 'IA analisa', desc: 'Detecta os melhores momentos automaticamente' },
                     { n: '3', title: 'Publique', desc: 'Agende direto no YouTube com 1 clique' },
                   ].map((item) => (
@@ -83,18 +100,20 @@ export default function Home() {
             </div>
           )}
 
-          {step === 3 && clips.length > 0 && (
-            <ClipsGrid
-              clips={clips}
-              videoFile={videoFile}
-              onClipsChange={setClips}
-              onProceed={() => setStep(4)}
-            />
+          {step === 3 && projects.length > 0 && (
+            <div>
+              <ClipsGrid
+                projects={projects}
+                onProjectClipsChange={updateProjectClips}
+                onProceed={() => setStep(4)}
+                onAddVideo={() => { setVideoFile(null); setStep(1) }}
+              />
+            </div>
           )}
 
           {step === 4 && (
             <div className="max-w-2xl mx-auto">
-              <PublishPanel clips={clips} />
+              <PublishPanel clips={allClips} />
             </div>
           )}
         </div>

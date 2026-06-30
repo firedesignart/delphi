@@ -1,13 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Loader2, Sparkles, CheckCircle } from 'lucide-react'
-import type { AnalysisProgress, Clip } from '@/types'
+import type { AnalysisProgress, Clip, VideoTheme } from '@/types'
 import { analyzeVideo } from '@/lib/mock-ai'
 import { cn } from '@/lib/utils'
 
 interface AnalysisViewProps {
   file: File
-  onComplete: (clips: Clip[]) => void
+  onComplete: (clips: Clip[], theme?: VideoTheme) => void
 }
 
 const stageLabels: Record<string, string> = {
@@ -30,12 +30,12 @@ export function AnalysisView({ file, onComplete }: AnalysisViewProps) {
     let cancelled = false
 
     async function run() {
-      for await (const clips of analyzeVideo(file, (p) => {
+      for await (const result of analyzeVideo(file, (p) => {
         if (!cancelled) setProgress(p)
       })) {
         if (!cancelled) {
           setDone(true)
-          setTimeout(() => onComplete(clips), 600)
+          setTimeout(() => onComplete(result.clips, result.theme), 600)
         }
       }
     }

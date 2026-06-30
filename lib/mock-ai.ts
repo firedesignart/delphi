@@ -1,9 +1,11 @@
-import type { Clip, AnalysisProgress } from '@/types'
+import type { Clip, AnalysisProgress, VideoTheme } from '@/types'
+
+export type AnalysisResult = { clips: Clip[]; theme: VideoTheme }
 
 export async function* analyzeVideo(
   videoFile: File,
   onProgress: (p: AnalysisProgress) => void
-): AsyncGenerator<Clip[]> {
+): AsyncGenerator<AnalysisResult> {
   onProgress({ stage: 'extracting', percent: 10, message: 'Extraindo áudio do vídeo...' })
   await delay(600)
   onProgress({ stage: 'transcribing', percent: 30, message: 'Transcrevendo com Whisper...' })
@@ -21,8 +23,8 @@ export async function* analyzeVideo(
       onProgress({ stage: 'scoring', percent: 85, message: 'Calculando scores de retenção...' })
       await delay(300)
       onProgress({ stage: 'done', percent: 100, message: 'Análise concluída!' })
-      const { clips } = await res.json()
-      yield clips as Clip[]
+      const { clips, theme } = await res.json()
+      yield { clips: clips as Clip[], theme: theme ?? mockTheme() }
       return
     }
   } catch {
@@ -36,7 +38,11 @@ export async function* analyzeVideo(
   await delay(800)
   onProgress({ stage: 'done', percent: 100, message: 'Análise concluída! (modo demonstração)' })
 
-  yield generateMockClips(videoFile.name)
+  yield { clips: generateMockClips(videoFile.name), theme: mockTheme() }
+}
+
+function mockTheme(): VideoTheme {
+  return { genre: 'educativo', mood: 'informativo e envolvente', music_suggestion: 'lofi' }
 }
 
 function generateMockClips(filename: string): Clip[] {
@@ -91,7 +97,7 @@ function generateMockClips(filename: string): Clip[] {
     },
   ]
 
-  return mockClips.map((c, i) => {
+  const clips = mockClips.map((c, i) => {
     const total = Math.round((c.hookScore + c.emotionScore + c.narrativeScore + c.energyScore) / 4)
     return {
       id: `clip_${i + 1}`,
@@ -108,9 +114,14 @@ function generateMockClips(filename: string): Clip[] {
       totalScore: total,
       transcript: c.transcript,
       status: 'PENDING' as const,
+      isBest: false,
       createdAt: new Date().toISOString(),
     }
   })
+  // mark best
+  const best = clips.reduce((a, b) => (a.totalScore > b.totalScore ? a : b))
+  best.isBest = true
+  return clips
 }
 
 function delay(ms: number) {

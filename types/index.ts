@@ -32,6 +32,20 @@ export interface MediaAsset {
   createdAt: string
 }
 
+export interface VideoTheme {
+  genre: string
+  mood: string
+  music_suggestion: string
+}
+
+export interface VideoProject {
+  id: string
+  title: string
+  videoFile: File
+  clips: Clip[]
+  theme?: VideoTheme
+}
+
 export interface Clip {
   id: string
   mediaAssetId: string
@@ -47,7 +61,8 @@ export interface Clip {
   totalScore: number
   transcript: string
   status: ClipStatus
-  thumbnailUrl?: string
+  isBest?: boolean
+  thumbnailUrl?: string | null
   createdAt: string
 }
 
