@@ -35,32 +35,48 @@ export async function extractAudio(
   videoFile: File,
   onProgress?: (p: number) => void
 ): Promise<Blob> {
-  const ff = await loadFFmpeg()
-  const inputName = 'extract_input.mp4'
-  const outputName = 'extract_output.mp3'
+  // Arquivos muito grandes costumam exceder a memória disponível do FFmpeg no navegador
+  const MAX_SIZE = 1.5 * 1024 * 1024 * 1024 // 1.5GB
+  if (videoFile.size > MAX_SIZE) {
+    throw new Error(
+      `Vídeo muito grande (${(videoFile.size / 1024 / 1024 / 1024).toFixed(1)}GB). ` +
+      `O processamento no navegador funciona melhor com vídeos até 1.5GB.`
+    )
+  }
 
-  onProgress?.(5)
-  await ff.writeFile(inputName, await fetchFile(videoFile))
-  onProgress?.(15)
+  try {
+    const ff = await loadFFmpeg()
+    const inputName = 'extract_input.mp4'
+    const outputName = 'extract_output.mp3'
 
-  ff.on('progress', ({ progress }) => onProgress?.(15 + Math.round(progress * 75)))
+    onProgress?.(5)
+    await ff.writeFile(inputName, await fetchFile(videoFile))
+    onProgress?.(15)
 
-  await ff.exec([
-    '-i', inputName,
-    '-vn',
-    '-ac', '1',
-    '-ar', '16000',
-    '-b:a', '64k',
-    outputName,
-  ])
+    ff.on('progress', ({ progress }) => onProgress?.(15 + Math.round(progress * 75)))
 
-  const data = await ff.readFile(outputName)
-  await ff.deleteFile(inputName)
-  await ff.deleteFile(outputName)
-  onProgress?.(100)
+    await ff.exec([
+      '-i', inputName,
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-b:a', '64k',
+      outputName,
+    ])
 
-  const buffer = data instanceof Uint8Array ? data.buffer.slice(0) : data
-  return new Blob([buffer as ArrayBuffer], { type: 'audio/mp3' })
+    const data = await ff.readFile(outputName)
+    await ff.deleteFile(inputName)
+    await ff.deleteFile(outputName)
+    onProgress?.(100)
+
+    const buffer = data instanceof Uint8Array ? data.buffer.slice(0) : data
+    return new Blob([buffer as ArrayBuffer], { type: 'audio/mp3' })
+  } catch (err) {
+    // Estado do FFmpeg pode ficar corrompido após uma falha — força recarregar do zero na próxima tentativa
+    loaded = false
+    ffmpeg = null
+    throw err
+  }
 }
 
 async function ensureFont(ff: FFmpeg): Promise<boolean> {
@@ -246,7 +262,13 @@ export async function cutVideoClip(
     }
   }
 
-  await ff.exec(args)
+  try {
+    await ff.exec(args)
+  } catch (err) {
+    loaded = false
+    ffmpeg = null
+    throw err
+  }
   onProgress?.(95)
 
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')

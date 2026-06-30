@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Loader2, Sparkles, CheckCircle } from 'lucide-react'
+import { Loader2, Sparkles, CheckCircle, AlertTriangle } from 'lucide-react'
 import type { AnalysisProgress, Clip, VideoTheme } from '@/types'
 import { analyzeVideo } from '@/lib/mock-ai'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ export function AnalysisView({ file, onComplete }: AnalysisViewProps) {
     message: 'Iniciando análise...',
   })
   const [done, setDone] = useState(false)
+  const [mockWarning, setMockWarning] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -35,7 +36,10 @@ export function AnalysisView({ file, onComplete }: AnalysisViewProps) {
       })) {
         if (!cancelled) {
           setDone(true)
-          setTimeout(() => onComplete(result.clips, result.theme), 600)
+          if (result.isMock) {
+            setMockWarning(result.errorReason ?? 'Não foi possível analisar o vídeo real.')
+          }
+          setTimeout(() => onComplete(result.clips, result.theme), result.isMock ? 2500 : 600)
         }
       }
     }
@@ -107,6 +111,17 @@ export function AnalysisView({ file, onComplete }: AnalysisViewProps) {
           </div>
         ))}
       </div>
+
+      {/* Mock fallback warning */}
+      {mockWarning && (
+        <div className="mt-8 max-w-md w-full bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-900">Análise real falhou — usando clips de demonstração</p>
+            <p className="text-xs text-amber-700 mt-1">{mockWarning}</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

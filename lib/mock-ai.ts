@@ -1,7 +1,7 @@
 import type { Clip, AnalysisProgress, VideoTheme } from '@/types'
 import { extractAudio } from './ffmpeg'
 
-export type AnalysisResult = { clips: Clip[]; theme: VideoTheme }
+export type AnalysisResult = { clips: Clip[]; theme: VideoTheme; isMock?: boolean; errorReason?: string }
 
 export async function* analyzeVideo(
   videoFile: File,
@@ -10,12 +10,15 @@ export async function* analyzeVideo(
   onProgress({ stage: 'extracting', percent: 5, message: 'Extraindo áudio do vídeo...' })
 
   let audioBlob: Blob | null = null
+  let errorReason: string | undefined
+
   try {
     audioBlob = await extractAudio(videoFile, (p) => {
       onProgress({ stage: 'extracting', percent: 5 + Math.round(p * 0.2), message: 'Extraindo áudio do vídeo...' })
     })
-  } catch (err) {
+  } catch (err: any) {
     console.error('Audio extraction failed:', err)
+    errorReason = `Falha ao extrair áudio: ${err?.message ?? 'erro desconhecido'}`
   }
 
   onProgress({ stage: 'transcribing', percent: 30, message: 'Transcrevendo com Whisper...' })
@@ -40,9 +43,11 @@ export async function* analyzeVideo(
       } else {
         const errBody = await res.json().catch(() => ({}))
         console.error('Analyze API error:', res.status, errBody)
+        errorReason = `Falha na análise (${res.status}): ${errBody?.error ?? 'erro desconhecido'}`
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Analyze fetch failed:', err)
+      errorReason = `Falha de conexão com a API: ${err?.message ?? 'erro desconhecido'}`
     }
   }
 
@@ -53,7 +58,7 @@ export async function* analyzeVideo(
   await delay(800)
   onProgress({ stage: 'done', percent: 100, message: 'Análise concluída! (modo demonstração)' })
 
-  yield { clips: generateMockClips(videoFile.name), theme: mockTheme() }
+  yield { clips: generateMockClips(videoFile.name), theme: mockTheme(), isMock: true, errorReason }
 }
 
 function mockTheme(): VideoTheme {
