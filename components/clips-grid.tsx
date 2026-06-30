@@ -5,8 +5,8 @@ import type { Clip, VideoProject } from '@/types'
 import { cn, formatDuration, scoreColor, scoreBg } from '@/lib/utils'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
-import { ClipPreviewModal } from './clip-preview-modal'
 import { LayoutPicker } from './layout-picker'
+import { ClipDetailModal } from './clip-detail-modal'
 
 interface ClipsGridProps {
   projects: VideoProject[]
@@ -34,14 +34,23 @@ function ClipCard({ clip, videoFile, suggestedMusic, onApprove, onReject }: {
   onApprove: () => void
   onReject: () => void
 }) {
-  const [previewing, setPreviewing] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const approved = clip.status === 'APPROVED'
   const rejected = clip.status === 'REJECTED'
 
   return (
     <>
-      {previewing && <ClipPreviewModal clip={clip} videoFile={videoFile} onClose={() => setPreviewing(false)} />}
+      {detailOpen && (
+        <ClipDetailModal
+          clip={clip}
+          videoFile={videoFile}
+          suggestedMusic={suggestedMusic}
+          onClose={() => setDetailOpen(false)}
+          onApprove={onApprove}
+          onReject={onReject}
+        />
+      )}
       {exporting && (
         <LayoutPicker clip={clip} videoFile={videoFile} suggestedMusic={suggestedMusic} onClose={() => setExporting(false)} />
       )}
@@ -65,7 +74,7 @@ function ClipCard({ clip, videoFile, suggestedMusic, onApprove, onReject }: {
             </div>
           )}
 
-          <button onClick={() => setPreviewing(true)} className="absolute inset-0 flex items-center justify-center group">
+          <button onClick={() => setDetailOpen(true)} className="absolute inset-0 flex items-center justify-center group">
             <div className="w-12 h-12 rounded-full bg-black/50 group-hover:bg-black/70 flex items-center justify-center transition-colors">
               <Play size={20} className="text-white ml-1" />
             </div>
@@ -94,20 +103,22 @@ function ClipCard({ clip, videoFile, suggestedMusic, onApprove, onReject }: {
         </div>
 
         <div className="p-4">
-          <h3 className="font-semibold text-[#111] text-sm leading-snug mb-1 line-clamp-2">{clip.title}</h3>
-          <p className="text-xs text-[#888] mb-3 line-clamp-2">{clip.description}</p>
-          <div className="text-xs text-[#bbb] mb-3">{formatDuration(clip.startTime)} → {formatDuration(clip.endTime)}</div>
+          <button onClick={() => setDetailOpen(true)} className="text-left w-full">
+            <h3 className="font-semibold text-[#111] text-sm leading-snug mb-1 line-clamp-2 hover:underline">{clip.title}</h3>
+            <p className="text-xs text-[#888] mb-3 line-clamp-2">{clip.description}</p>
+            <div className="text-xs text-[#bbb] mb-3">{formatDuration(clip.startTime)} → {formatDuration(clip.endTime)}</div>
 
-          <div className="space-y-1.5 mb-4">
-            <ScoreBar value={clip.hookScore} icon={Zap} />
-            <ScoreBar value={clip.emotionScore} icon={Heart} />
-            <ScoreBar value={clip.narrativeScore} icon={TrendingUp} />
-            <ScoreBar value={clip.energyScore} icon={Star} />
-          </div>
+            <div className="space-y-1.5 mb-4">
+              <ScoreBar value={clip.hookScore} icon={Zap} />
+              <ScoreBar value={clip.emotionScore} icon={Heart} />
+              <ScoreBar value={clip.narrativeScore} icon={TrendingUp} />
+              <ScoreBar value={clip.energyScore} icon={Star} />
+            </div>
 
-          <div className="bg-[#fafafa] rounded-lg p-2 mb-4 text-xs text-[#666] italic line-clamp-2">
-            "{clip.transcript}"
-          </div>
+            <div className="bg-[#fafafa] rounded-lg p-2 mb-4 text-xs text-[#666] italic line-clamp-2">
+              "{clip.transcript}"
+            </div>
+          </button>
 
           <div className="flex gap-2">
             <Button variant={approved ? 'primary' : 'secondary'} size="sm" className="flex-1" onClick={onApprove}>

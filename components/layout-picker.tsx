@@ -1,42 +1,39 @@
 'use client'
 import { useState, useRef } from 'react'
-import { X, Download, Loader2, Music, Zap } from 'lucide-react'
+import { X, Download, Loader2, Music, Zap, Type } from 'lucide-react'
 import type { Clip } from '@/types'
 import { cutVideoClip } from '@/lib/ffmpeg'
 import { formatDuration, cn } from '@/lib/utils'
 
 export type VideoLayout = 'fill' | 'letterbox' | 'split'
 export type Transition = 'none' | 'fade' | 'dissolve'
+export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9'
+
+const ASPECT_RATIOS: { id: AspectRatio; label: string; w: number; h: number }[] = [
+  { id: '9:16', label: 'Vertical (Shorts)', w: 1080, h: 1920 },
+  { id: '1:1', label: 'Quadrado', w: 1080, h: 1080 },
+  { id: '4:5', label: 'Retrato (Feed)', w: 1080, h: 1350 },
+  { id: '16:9', label: 'Horizontal', w: 1920, h: 1080 },
+]
 
 const LAYOUTS: { id: VideoLayout; label: string; desc: string }[] = [
-  { id: 'fill', label: '9:16 Preenchido', desc: 'Tela toda, bordas cortadas' },
-  { id: 'letterbox', label: '16:9 Barras', desc: 'Vídeo original com barras' },
+  { id: 'fill', label: 'Preenchido', desc: 'Tela toda, bordas cortadas' },
+  { id: 'letterbox', label: 'Com Barras', desc: 'Vídeo original, barras pretas' },
   { id: 'split', label: 'Split Screen', desc: 'Vídeo em cima e embaixo' },
 ]
 
 const TRANSITIONS: { id: Transition; label: string; desc: string }[] = [
   { id: 'none', label: 'Sem transição', desc: 'Corte direto' },
-  { id: 'fade', label: 'Fade', desc: 'Escurece e aparece suavemente' },
-  { id: 'dissolve', label: 'Dissolve', desc: 'Fusão suave entre cenas' },
+  { id: 'fade', label: 'Fade', desc: 'Escurece suavemente' },
+  { id: 'dissolve', label: 'Dissolve', desc: 'Fusão suave' },
 ]
 
-// Royalty-free tracks by mood (Pixabay public CDN)
 const MUSIC_TRACKS: Record<string, { label: string; url: string }[]> = {
-  epic: [
-    { label: 'Epic Rise', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_270f30cb3e.mp3' },
-  ],
-  lofi: [
-    { label: 'Lo-fi Chill', url: 'https://cdn.pixabay.com/audio/2022/05/16/audio_b2840e0a56.mp3' },
-  ],
-  tense: [
-    { label: 'Dark Tension', url: 'https://cdn.pixabay.com/audio/2022/10/16/audio_19c64de9ba.mp3' },
-  ],
-  upbeat: [
-    { label: 'Happy Upbeat', url: 'https://cdn.pixabay.com/audio/2022/01/18/audio_f8f26ff6ef.mp3' },
-  ],
-  cinematic: [
-    { label: 'Cinematic', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_8cb749bcc4.mp3' },
-  ],
+  epic: [{ label: 'Epic Rise', url: 'https://cdn.pixabay.com/audio/2022/03/10/audio_270f30cb3e.mp3' }],
+  lofi: [{ label: 'Lo-fi Chill', url: 'https://cdn.pixabay.com/audio/2022/05/16/audio_b2840e0a56.mp3' }],
+  tense: [{ label: 'Dark Tension', url: 'https://cdn.pixabay.com/audio/2022/10/16/audio_19c64de9ba.mp3' }],
+  upbeat: [{ label: 'Happy Upbeat', url: 'https://cdn.pixabay.com/audio/2022/01/18/audio_f8f26ff6ef.mp3' }],
+  cinematic: [{ label: 'Cinematic', url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_8cb749bcc4.mp3' }],
 }
 
 const MUSIC_GENRES = [
@@ -56,13 +53,17 @@ interface LayoutPickerProps {
 }
 
 export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose }: LayoutPickerProps) {
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16')
   const [layout, setLayout] = useState<VideoLayout>('fill')
   const [transition, setTransition] = useState<Transition>('fade')
   const [musicGenre, setMusicGenre] = useState<string>(suggestedMusic !== 'none' ? suggestedMusic : 'none')
   const [captions, setCaptions] = useState(true)
+  const [burnCaptions, setBurnCaptions] = useState(true)
   const [cutting, setCutting] = useState(false)
   const [progress, setProgress] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
+
+  const isVertical = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '1:1'
 
   async function handleExport() {
     const ctrl = new AbortController()
@@ -70,11 +71,12 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
     setCutting(true)
     setProgress(0)
     try {
-      // Resolve music URL
       let musicUrl: string | undefined
       if (musicGenre !== 'none' && MUSIC_TRACKS[musicGenre]) {
         musicUrl = MUSIC_TRACKS[musicGenre][0].url
       }
+
+      const ratio = ASPECT_RATIOS.find((r) => r.id === aspectRatio)!
 
       const blob = await cutVideoClip(
         videoFile,
@@ -83,6 +85,8 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
         layout,
         transition,
         musicUrl,
+        { width: ratio.w, height: ratio.h },
+        burnCaptions ? clip.transcript : undefined,
         setProgress,
         ctrl.signal
       )
@@ -90,7 +94,7 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${clip.title.replace(/[^a-zA-Z0-9]/g, '_')}_${layout}.mp4`
+      a.download = `${clip.title.replace(/[^a-zA-Z0-9]/g, '_')}_${aspectRatio.replace(':', 'x')}.mp4`
       a.click()
       URL.revokeObjectURL(url)
 
@@ -118,7 +122,6 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl my-auto" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#eee]">
           <div>
             <h3 className="font-semibold text-[#111]">Exportar clip</h3>
@@ -132,29 +135,36 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
         <div className="px-6 py-5 space-y-5">
           <p className="text-xs text-[#888]">{formatDuration(clip.startTime)} → {formatDuration(clip.endTime)} · {formatDuration(clip.duration)}</p>
 
-          {/* Layout */}
+          {/* Aspect ratio */}
           <div>
-            <p className="text-sm font-medium text-[#111] mb-3">Formato de saída</p>
-            <div className="grid grid-cols-3 gap-2">
-              {LAYOUTS.map((l) => (
-                <button key={l.id} onClick={() => setLayout(l.id)}
-                  className={cn('rounded-xl border-2 p-3 text-left transition-all', layout === l.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
-                  <div className={cn('w-full mb-2 rounded-lg flex items-center justify-center', layout === l.id ? 'bg-white/10' : 'bg-[#f0f0f0]')} style={{ height: 48 }}>
-                    {l.id === 'fill' && <div className={cn('w-6 h-10 rounded', layout === l.id ? 'bg-white/40' : 'bg-[#333]')} />}
-                    {l.id === 'letterbox' && <div className={cn('w-11 h-6 rounded', layout === l.id ? 'bg-white/40' : 'bg-[#333]')} />}
-                    {l.id === 'split' && (
-                      <div className="flex flex-col gap-0.5 w-6">
-                        <div className={cn('h-4 rounded-sm', layout === l.id ? 'bg-white/40' : 'bg-[#333]')} />
-                        <div className={cn('h-4 rounded-sm', layout === l.id ? 'bg-white/20' : 'bg-[#555]')} />
-                      </div>
-                    )}
-                  </div>
-                  <p className={cn('text-xs font-medium', layout === l.id ? 'text-white' : 'text-[#111]')}>{l.label}</p>
-                  <p className={cn('text-[10px] mt-0.5', layout === l.id ? 'text-white/60' : 'text-[#999]')}>{l.desc}</p>
+            <p className="text-sm font-medium text-[#111] mb-3">Proporção</p>
+            <div className="grid grid-cols-4 gap-2">
+              {ASPECT_RATIOS.map((r) => (
+                <button key={r.id} onClick={() => setAspectRatio(r.id)}
+                  className={cn('rounded-xl border-2 p-2 flex flex-col items-center gap-1.5 transition-all', aspectRatio === r.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
+                  <div className={cn('rounded', aspectRatio === r.id ? 'bg-white/40' : 'bg-[#333]')}
+                    style={{ width: r.w >= r.h ? 28 : (28 * r.w) / r.h, height: r.h >= r.w ? 28 : (28 * r.h) / r.w }} />
+                  <span className={cn('text-[10px] font-medium', aspectRatio === r.id ? 'text-white' : 'text-[#555]')}>{r.id}</span>
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Layout — only relevant for vertical/square ratios */}
+          {isVertical && (
+            <div>
+              <p className="text-sm font-medium text-[#111] mb-3">Enquadramento</p>
+              <div className="grid grid-cols-3 gap-2">
+                {LAYOUTS.map((l) => (
+                  <button key={l.id} onClick={() => setLayout(l.id)}
+                    className={cn('rounded-xl border-2 px-2 py-2.5 text-left transition-all', layout === l.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
+                    <p className={cn('text-xs font-medium', layout === l.id ? 'text-white' : 'text-[#111]')}>{l.label}</p>
+                    <p className={cn('text-[10px] mt-0.5', layout === l.id ? 'text-white/60' : 'text-[#999]')}>{l.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Transition */}
           <div>
@@ -166,7 +176,6 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
                 <button key={t.id} onClick={() => setTransition(t.id)}
                   className={cn('flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition-all', transition === t.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
                   <p className={cn('text-xs font-medium', transition === t.id ? 'text-white' : 'text-[#111]')}>{t.label}</p>
-                  <p className={cn('text-[10px] mt-0.5', transition === t.id ? 'text-white/60' : 'text-[#999]')}>{t.desc}</p>
                 </button>
               ))}
             </div>
@@ -180,8 +189,7 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
                 <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">Sugerida pela IA</span>
               )}
             </p>
-            <p className="text-xs text-[#999] mb-2">Música royalty-free misturada automaticamente</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 mt-2">
               {MUSIC_GENRES.map((g) => (
                 <button key={g.id} onClick={() => setMusicGenre(g.id)}
                   className={cn('rounded-xl border-2 px-3 py-2 text-left text-xs transition-all', musicGenre === g.id ? 'border-[#111] bg-[#111] text-white' : 'border-[#e5e5e5] hover:border-[#ccc] text-[#555]')}>
@@ -191,11 +199,26 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
             </div>
           </div>
 
-          {/* Captions toggle */}
+          {/* Burn captions toggle */}
           <div className="flex items-center justify-between py-3 border-t border-[#f0f0f0]">
+            <div className="flex items-center gap-2">
+              <Type size={14} className="text-[#888]" />
+              <div>
+                <p className="text-sm font-medium text-[#111]">Legenda no vídeo</p>
+                <p className="text-xs text-[#999]">Queima o texto direto na imagem</p>
+              </div>
+            </div>
+            <button onClick={() => setBurnCaptions(!burnCaptions)}
+              className={cn('w-10 h-6 rounded-full transition-colors relative shrink-0', burnCaptions ? 'bg-[#111]' : 'bg-[#ddd]')}>
+              <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', burnCaptions ? 'left-5' : 'left-1')} />
+            </button>
+          </div>
+
+          {/* SRT download toggle */}
+          <div className="flex items-center justify-between py-1">
             <div>
-              <p className="text-sm font-medium text-[#111]">Baixar legendas (.SRT)</p>
-              <p className="text-xs text-[#999]">Para adicionar no YouTube</p>
+              <p className="text-sm font-medium text-[#111]">Baixar arquivo .SRT</p>
+              <p className="text-xs text-[#999]">Para adicionar manualmente no YouTube</p>
             </div>
             <button onClick={() => setCaptions(!captions)}
               className={cn('w-10 h-6 rounded-full transition-colors relative', captions ? 'bg-[#111]' : 'bg-[#ddd]')}>
@@ -203,7 +226,6 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
             </button>
           </div>
 
-          {/* Progress */}
           {cutting && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
@@ -251,5 +273,5 @@ function toSRTTime(s: number): string {
   const m = Math.floor((s % 3600) / 60)
   const sec = Math.floor(s % 60)
   const ms = Math.round((s % 1) * 1000)
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '00')},${String(ms).padStart(3, '0')}`
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')},${String(ms).padStart(3, '0')}`
 }
