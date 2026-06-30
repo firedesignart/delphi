@@ -4,10 +4,12 @@ import { X, Check, Download, Zap, Heart, TrendingUp, Star, Play, Pause } from 'l
 import type { Clip } from '@/types'
 import { cn, formatDuration, scoreColor, scoreBg } from '@/lib/utils'
 import { LayoutPicker } from './layout-picker'
+import { localStreamUrl } from '@/lib/local-helper'
 
 interface ClipDetailModalProps {
   clip: Clip
-  videoFile: File
+  videoFile: File | null
+  localFilename?: string
   suggestedMusic?: string
   onClose: () => void
   onApprove: () => void
@@ -29,7 +31,7 @@ function ScoreRow({ label, value, icon: Icon }: { label: string; value: number; 
   )
 }
 
-export function ClipDetailModal({ clip, videoFile, suggestedMusic, onClose, onApprove, onReject }: ClipDetailModalProps) {
+export function ClipDetailModal({ clip, videoFile, localFilename, suggestedMusic, onClose, onApprove, onReject }: ClipDetailModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const urlRef = useRef('')
   const [playing, setPlaying] = useState(false)
@@ -38,10 +40,17 @@ export function ClipDetailModal({ clip, videoFile, suggestedMusic, onClose, onAp
   const approved = clip.status === 'APPROVED'
 
   useEffect(() => {
-    urlRef.current = URL.createObjectURL(videoFile)
     const video = videoRef.current
     if (!video) return
-    video.src = urlRef.current
+
+    if (localFilename) {
+      video.src = localStreamUrl(localFilename)
+    } else if (videoFile) {
+      urlRef.current = URL.createObjectURL(videoFile)
+      video.src = urlRef.current
+    } else {
+      return
+    }
     video.currentTime = clip.startTime
 
     function onTime() {
@@ -56,9 +65,9 @@ export function ClipDetailModal({ clip, videoFile, suggestedMusic, onClose, onAp
     video.addEventListener('timeupdate', onTime)
     return () => {
       video.removeEventListener('timeupdate', onTime)
-      URL.revokeObjectURL(urlRef.current)
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
     }
-  }, [clip, videoFile])
+  }, [clip, videoFile, localFilename])
 
   function togglePlay() {
     const video = videoRef.current
@@ -85,7 +94,7 @@ export function ClipDetailModal({ clip, videoFile, suggestedMusic, onClose, onAp
   return (
     <>
       {exporting && (
-        <LayoutPicker clip={clip} videoFile={videoFile} suggestedMusic={suggestedMusic} onClose={() => setExporting(false)} />
+        <LayoutPicker clip={clip} videoFile={videoFile} localFilename={localFilename} suggestedMusic={suggestedMusic} onClose={() => setExporting(false)} />
       )}
 
       <div className="fixed inset-0 z-40 bg-black/85 flex items-center justify-center p-4" onClick={onClose}>

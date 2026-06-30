@@ -10,28 +10,39 @@ import type { Clip, VideoProject } from '@/types'
 export default function Home() {
   const [step, setStep] = useState(1)
   const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [localFilename, setLocalFilename] = useState<string | null>(null)
+  const [localFileSize, setLocalFileSize] = useState<number>(0)
   const [projects, setProjects] = useState<VideoProject[]>([])
 
   const allClips = projects.flatMap((p) => p.clips)
+  const hasVideo = !!videoFile || !!localFilename
 
   const handleFileSelected = useCallback((file: File) => {
     setVideoFile(file)
+    setLocalFilename(null)
+  }, [])
+
+  const handleLocalFileSelected = useCallback((filename: string, size: number) => {
+    setLocalFilename(filename)
+    setLocalFileSize(size)
+    setVideoFile(null)
   }, [])
 
   const handleAnalysisComplete = useCallback(
     (detectedClips: Clip[], theme?: any) => {
-      if (!videoFile) return
+      if (!videoFile && !localFilename) return
       const project: VideoProject = {
         id: `proj-${Date.now()}`,
-        title: videoFile.name.replace(/\.[^/.]+$/, ''),
+        title: (videoFile?.name ?? localFilename ?? 'video').replace(/\.[^/.]+$/, ''),
         videoFile,
+        localFilename: localFilename ?? undefined,
         clips: detectedClips,
         theme,
       }
       setProjects((prev) => [...prev, project])
       setStep(3)
     },
-    [videoFile]
+    [videoFile, localFilename]
   )
 
   function updateProjectClips(projectId: string, clips: Clip[]) {
@@ -50,7 +61,7 @@ export default function Home() {
       <Sidebar
         activeStep={step}
         onStepClick={setStep}
-        hasVideo={!!videoFile}
+        hasVideo={hasVideo}
         hasClips={allClips.length > 0}
       />
 
@@ -63,8 +74,8 @@ export default function Home() {
         <div className="p-8">
           {step === 1 && (
             <div className="max-w-2xl mx-auto">
-              <UploadZone onFileSelected={handleFileSelected} />
-              {videoFile && (
+              <UploadZone onFileSelected={handleFileSelected} onLocalFileSelected={handleLocalFileSelected} />
+              {hasVideo && (
                 <div className="mt-6 flex justify-end">
                   <button
                     onClick={() => setStep(2)}
@@ -74,10 +85,10 @@ export default function Home() {
                   </button>
                 </div>
               )}
-              {!videoFile && (
+              {!hasVideo && (
                 <div className="mt-8 grid grid-cols-3 gap-4">
                   {[
-                    { n: '1', title: 'Envie seu vídeo', desc: 'Upload ou link do YouTube, Rumble e mais' },
+                    { n: '1', title: 'Envie seu vídeo', desc: 'Upload, link ou vídeo grande do seu PC' },
                     { n: '2', title: 'IA analisa', desc: 'Detecta os melhores momentos automaticamente' },
                     { n: '3', title: 'Publique', desc: 'Agende direto no YouTube com 1 clique' },
                   ].map((item) => (
@@ -94,9 +105,9 @@ export default function Home() {
             </div>
           )}
 
-          {step === 2 && videoFile && (
+          {step === 2 && hasVideo && (
             <div className="max-w-2xl mx-auto">
-              <AnalysisView file={videoFile} onComplete={handleAnalysisComplete} />
+              <AnalysisView file={videoFile} localFilename={localFilename ?? undefined} onComplete={handleAnalysisComplete} />
             </div>
           )}
 
@@ -106,7 +117,7 @@ export default function Home() {
                 projects={projects}
                 onProjectClipsChange={updateProjectClips}
                 onProceed={() => setStep(4)}
-                onAddVideo={() => { setVideoFile(null); setStep(1) }}
+                onAddVideo={() => { setVideoFile(null); setLocalFilename(null); setStep(1) }}
               />
             </div>
           )}

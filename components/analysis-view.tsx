@@ -6,7 +6,8 @@ import { analyzeVideo } from '@/lib/mock-ai'
 import { cn } from '@/lib/utils'
 
 interface AnalysisViewProps {
-  file: File
+  file: File | null
+  localFilename?: string
   onComplete: (clips: Clip[], theme?: VideoTheme) => void
 }
 
@@ -18,7 +19,7 @@ const stageLabels: Record<string, string> = {
   done: 'Análise concluída',
 }
 
-export function AnalysisView({ file, onComplete }: AnalysisViewProps) {
+export function AnalysisView({ file, localFilename, onComplete }: AnalysisViewProps) {
   const [progress, setProgress] = useState<AnalysisProgress>({
     stage: 'extracting',
     percent: 0,
@@ -33,7 +34,7 @@ export function AnalysisView({ file, onComplete }: AnalysisViewProps) {
     async function run() {
       for await (const result of analyzeVideo(file, (p) => {
         if (!cancelled) setProgress(p)
-      })) {
+      }, localFilename)) {
         if (!cancelled) {
           setDone(true)
           if (result.isMock) {
@@ -46,7 +47,7 @@ export function AnalysisView({ file, onComplete }: AnalysisViewProps) {
 
     run()
     return () => { cancelled = true }
-  }, [file, onComplete])
+  }, [file, localFilename, onComplete])
 
   const stages = ['extracting', 'transcribing', 'analyzing', 'scoring', 'done']
   const currentIdx = stages.indexOf(progress.stage)

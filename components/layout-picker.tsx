@@ -5,6 +5,7 @@ import type { Clip } from '@/types'
 import { cutVideoClip } from '@/lib/ffmpeg'
 import { trackFaces, type FaceTrackPoint } from '@/lib/face-tracking'
 import { getDelphiWatermarkPng } from '@/lib/watermark'
+import { cutClipLocal } from '@/lib/local-helper'
 import { formatDuration, cn } from '@/lib/utils'
 
 export type VideoLayout = 'fill' | 'letterbox' | 'split' | 'auto' | 'react'
@@ -51,14 +52,15 @@ const MUSIC_GENRES = [
 
 interface LayoutPickerProps {
   clip: Clip
-  videoFile: File
+  videoFile: File | null
+  localFilename?: string
   suggestedMusic?: string
   onClose: () => void
 }
 
-export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose }: LayoutPickerProps) {
+export function LayoutPicker({ clip, videoFile, localFilename, suggestedMusic = 'none', onClose }: LayoutPickerProps) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16')
-  const [layout, setLayout] = useState<VideoLayout>('auto')
+  const [layout, setLayout] = useState<VideoLayout>(localFilename ? 'fill' : 'auto')
   const [transition, setTransition] = useState<Transition>('fade')
   const [musicGenre, setMusicGenre] = useState<string>(suggestedMusic !== 'none' ? suggestedMusic : 'none')
   const [captions, setCaptions] = useState(true)
@@ -67,9 +69,11 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
   const [cutting, setCutting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [stage, setStage] = useState<'tracking' | 'exporting'>('exporting')
+  const [localSuccess, setLocalSuccess] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const isVertical = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '1:1'
+  const availableLayouts = localFilename ? LAYOUTS.filter((l) => l.id === 'fill' || l.id === 'letterbox') : LAYOUTS
 
   async function handleExport() {
     const ctrl = new AbortController()
@@ -77,12 +81,42 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
     setCutting(true)
     setProgress(0)
     try {
+      const ratio = ASPECT_RATIOS.find((r) => r.id === aspectRatio)!
+
+      // Modo Agente Local: corte feito por FFmpeg nativo no PC do usuário, sem limite de tamanho
+      if (localFilename) {
+        setProgress(20)
+        const result = await cutClipLocal({
+          filename: localFilename,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+          layout: layout === 'letterbox' ? 'letterbox' : 'fill',
+          width: ratio.w,
+          height: ratio.h,
+          outputName: `${clip.title}_${aspectRatio.replace(':', 'x')}`,
+        })
+        setProgress(100)
+        setLocalSuccess(result.outputDir)
+
+        if (captions && clip.transcript) {
+          const srt = generateSRT(clip)
+          const srtBlob = new Blob([srt], { type: 'text/plain' })
+          const srtUrl = URL.createObjectURL(srtBlob)
+          const srtA = document.createElement('a')
+          srtA.href = srtUrl
+          srtA.download = `${clip.title.replace(/[^a-zA-Z0-9]/g, '_')}.srt`
+          srtA.click()
+          URL.revokeObjectURL(srtUrl)
+        }
+        return
+      }
+
+      if (!videoFile) throw new Error('Nenhum vídeo selecionado')
+
       let musicUrl: string | undefined
       if (musicGenre !== 'none' && MUSIC_TRACKS[musicGenre]) {
         musicUrl = MUSIC_TRACKS[musicGenre][0].url
       }
-
-      const ratio = ASPECT_RATIOS.find((r) => r.id === aspectRatio)!
 
       let faceTrack: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number } | undefined
       if (layout === 'auto' || layout === 'react') {
@@ -142,7 +176,7 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
 
       onClose()
     } catch (err: any) {
-      if (err?.name !== 'AbortError') alert('Erro ao exportar. Tente novamente.')
+      if (err?.name !== 'AbortError') alert(`Erro ao exportar: ${err?.message ?? 'tente novamente'}`)
     } finally {
       setCutting(false)
       setProgress(0)
@@ -185,8 +219,11 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
           {isVertical && (
             <div>
               <p className="text-sm font-medium text-[#111] mb-3">Enquadramento</p>
+              {localFilename && (
+                <p className="text-xs text-[#999] mb-2">No modo Agente Local, apenas Preenchido e Com Barras estão disponíveis por enquanto.</p>
+              )}
               <div className="grid grid-cols-2 gap-2">
-                {LAYOUTS.map((l) => (
+                {availableLayouts.map((l) => (
                   <button key={l.id} onClick={() => setLayout(l.id)}
                     className={cn('rounded-xl border-2 px-3 py-2.5 text-left transition-all flex items-start gap-2', layout === l.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
                     {l.id === 'auto' && <ScanFace size={14} className={cn('mt-0.5 shrink-0', layout === l.id ? 'text-white' : 'text-[#888]')} />}
@@ -201,53 +238,59 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
             </div>
           )}
 
-          {/* Transition */}
-          <div>
-            <p className="text-sm font-medium text-[#111] mb-3 flex items-center gap-2">
-              <Zap size={14} className="text-[#888]" /> Transição
-            </p>
-            <div className="flex gap-2">
-              {TRANSITIONS.map((t) => (
-                <button key={t.id} onClick={() => setTransition(t.id)}
-                  className={cn('flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition-all', transition === t.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
-                  <p className={cn('text-xs font-medium', transition === t.id ? 'text-white' : 'text-[#111]')}>{t.label}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Music */}
-          <div>
-            <p className="text-sm font-medium text-[#111] mb-1 flex items-center gap-2">
-              <Music size={14} className="text-[#888]" /> Trilha sonora
-              {suggestedMusic !== 'none' && (
-                <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">Sugerida pela IA</span>
-              )}
-            </p>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              {MUSIC_GENRES.map((g) => (
-                <button key={g.id} onClick={() => setMusicGenre(g.id)}
-                  className={cn('rounded-xl border-2 px-3 py-2 text-left text-xs transition-all', musicGenre === g.id ? 'border-[#111] bg-[#111] text-white' : 'border-[#e5e5e5] hover:border-[#ccc] text-[#555]')}>
-                  {g.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Burn captions toggle */}
-          <div className="flex items-center justify-between py-3 border-t border-[#f0f0f0]">
-            <div className="flex items-center gap-2">
-              <Type size={14} className="text-[#888]" />
-              <div>
-                <p className="text-sm font-medium text-[#111]">Legenda no vídeo</p>
-                <p className="text-xs text-[#999]">Queima o texto direto na imagem</p>
+          {/* Transition — não disponível no modo Agente Local v1 */}
+          {!localFilename && (
+            <div>
+              <p className="text-sm font-medium text-[#111] mb-3 flex items-center gap-2">
+                <Zap size={14} className="text-[#888]" /> Transição
+              </p>
+              <div className="flex gap-2">
+                {TRANSITIONS.map((t) => (
+                  <button key={t.id} onClick={() => setTransition(t.id)}
+                    className={cn('flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition-all', transition === t.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
+                    <p className={cn('text-xs font-medium', transition === t.id ? 'text-white' : 'text-[#111]')}>{t.label}</p>
+                  </button>
+                ))}
               </div>
             </div>
-            <button onClick={() => setBurnCaptions(!burnCaptions)}
-              className={cn('w-10 h-6 rounded-full transition-colors relative shrink-0', burnCaptions ? 'bg-[#111]' : 'bg-[#ddd]')}>
-              <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', burnCaptions ? 'left-5' : 'left-1')} />
-            </button>
-          </div>
+          )}
+
+          {/* Music — não disponível no modo Agente Local v1 */}
+          {!localFilename && (
+            <div>
+              <p className="text-sm font-medium text-[#111] mb-1 flex items-center gap-2">
+                <Music size={14} className="text-[#888]" /> Trilha sonora
+                {suggestedMusic !== 'none' && (
+                  <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">Sugerida pela IA</span>
+                )}
+              </p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {MUSIC_GENRES.map((g) => (
+                  <button key={g.id} onClick={() => setMusicGenre(g.id)}
+                    className={cn('rounded-xl border-2 px-3 py-2 text-left text-xs transition-all', musicGenre === g.id ? 'border-[#111] bg-[#111] text-white' : 'border-[#e5e5e5] hover:border-[#ccc] text-[#555]')}>
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Burn captions toggle — não disponível no modo Agente Local v1 */}
+          {!localFilename && (
+            <div className="flex items-center justify-between py-3 border-t border-[#f0f0f0]">
+              <div className="flex items-center gap-2">
+                <Type size={14} className="text-[#888]" />
+                <div>
+                  <p className="text-sm font-medium text-[#111]">Legenda no vídeo</p>
+                  <p className="text-xs text-[#999]">Queima o texto direto na imagem</p>
+                </div>
+              </div>
+              <button onClick={() => setBurnCaptions(!burnCaptions)}
+                className={cn('w-10 h-6 rounded-full transition-colors relative shrink-0', burnCaptions ? 'bg-[#111]' : 'bg-[#ddd]')}>
+                <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', burnCaptions ? 'left-5' : 'left-1')} />
+              </button>
+            </div>
+          )}
 
           {/* SRT download toggle */}
           <div className="flex items-center justify-between py-1">
@@ -261,38 +304,53 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
             </button>
           </div>
 
-          {/* Watermark toggle */}
-          <div className="flex items-center justify-between py-1 border-t border-[#f0f0f0] pt-3">
-            <div>
-              <p className="text-sm font-medium text-[#111]">Marca d'água Delphi</p>
-              <p className="text-xs text-[#999]">Símbolo da marca no canto do vídeo</p>
+          {/* Watermark toggle — não disponível no modo Agente Local v1 */}
+          {!localFilename && (
+            <div className="flex items-center justify-between py-1 border-t border-[#f0f0f0] pt-3">
+              <div>
+                <p className="text-sm font-medium text-[#111]">Marca d'água Delphi</p>
+                <p className="text-xs text-[#999]">Símbolo da marca no canto do vídeo</p>
+              </div>
+              <button onClick={() => setWatermark(!watermark)}
+                className={cn('w-10 h-6 rounded-full transition-colors relative', watermark ? 'bg-[#111]' : 'bg-[#ddd]')}>
+                <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', watermark ? 'left-5' : 'left-1')} />
+              </button>
             </div>
-            <button onClick={() => setWatermark(!watermark)}
-              className={cn('w-10 h-6 rounded-full transition-colors relative', watermark ? 'bg-[#111]' : 'bg-[#ddd]')}>
-              <div className={cn('absolute top-1 w-4 h-4 rounded-full bg-white transition-all', watermark ? 'left-5' : 'left-1')} />
-            </button>
-          </div>
+          )}
+
+          {/* Local export success */}
+          {localSuccess && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-emerald-900">Clip salvo com sucesso!</p>
+              <p className="text-xs text-emerald-700 mt-1 break-all">{localSuccess}</p>
+              <button onClick={onClose} className="mt-3 text-sm font-medium text-emerald-900 hover:underline">
+                Fechar
+              </button>
+            </div>
+          )}
 
           {cutting && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-[#555] flex items-center gap-2">
                   <Loader2 size={14} className="animate-spin" />
-                  {stage === 'tracking' ? 'Rastreando rosto…' : 'Exportando…'}
+                  {stage === 'tracking' ? 'Rastreando rosto…' : localFilename ? 'Cortando no seu PC…' : 'Exportando…'}
                 </span>
                 <span className="font-medium">{progress}%</span>
               </div>
               <div className="h-1.5 bg-[#eee] rounded-full overflow-hidden">
                 <div className="h-full bg-[#111] rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
               </div>
-              <button onClick={() => abortRef.current?.abort()} className="text-xs text-[#999] hover:text-red-500 transition-colors">Cancelar</button>
+              {!localFilename && (
+                <button onClick={() => abortRef.current?.abort()} className="text-xs text-[#999] hover:text-red-500 transition-colors">Cancelar</button>
+              )}
             </div>
           )}
 
-          {!cutting && (
+          {!cutting && !localSuccess && (
             <button onClick={handleExport}
               className="w-full bg-[#111] text-white rounded-xl py-3 font-medium flex items-center justify-center gap-2 hover:bg-[#222] transition-colors">
-              <Download size={16} /> Exportar
+              <Download size={16} /> {localFilename ? 'Cortar e salvar no PC' : 'Exportar'}
             </button>
           )}
         </div>

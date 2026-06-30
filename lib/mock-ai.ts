@@ -1,12 +1,14 @@
 import type { Clip, AnalysisProgress, VideoTheme } from '@/types'
 import { extractAudio } from './ffmpeg'
 import { transcribeAudio } from './groq-client'
+import { extractAudioLocal } from './local-helper'
 
 export type AnalysisResult = { clips: Clip[]; theme: VideoTheme; isMock?: boolean; errorReason?: string }
 
 export async function* analyzeVideo(
-  videoFile: File,
-  onProgress: (p: AnalysisProgress) => void
+  videoFile: File | null,
+  onProgress: (p: AnalysisProgress) => void,
+  localFilename?: string
 ): AsyncGenerator<AnalysisResult> {
   onProgress({ stage: 'extracting', percent: 5, message: 'Extraindo áudio do vídeo...' })
 
@@ -14,9 +16,15 @@ export async function* analyzeVideo(
   let errorReason: string | undefined
 
   try {
-    audioBlob = await extractAudio(videoFile, (p) => {
-      onProgress({ stage: 'extracting', percent: 5 + Math.round(p * 0.2), message: 'Extraindo áudio do vídeo...' })
-    })
+    if (localFilename) {
+      // Vídeo grande processado pelo Agente Local — FFmpeg nativo, sem limite de memória
+      audioBlob = await extractAudioLocal(localFilename)
+      onProgress({ stage: 'extracting', percent: 25, message: 'Extraindo áudio do vídeo...' })
+    } else if (videoFile) {
+      audioBlob = await extractAudio(videoFile, (p) => {
+        onProgress({ stage: 'extracting', percent: 5 + Math.round(p * 0.2), message: 'Extraindo áudio do vídeo...' })
+      })
+    }
   } catch (err: any) {
     console.error('Audio extraction failed:', err)
     errorReason = `Falha ao extrair áudio: ${err?.message ?? 'erro desconhecido'}`
@@ -62,7 +70,7 @@ export async function* analyzeVideo(
   await delay(800)
   onProgress({ stage: 'done', percent: 100, message: 'Análise concluída! (modo demonstração)' })
 
-  yield { clips: generateMockClips(videoFile.name), theme: mockTheme(), isMock: true, errorReason }
+  yield { clips: generateMockClips(videoFile?.name ?? localFilename ?? 'video'), theme: mockTheme(), isMock: true, errorReason }
 }
 
 function mockTheme(): VideoTheme {

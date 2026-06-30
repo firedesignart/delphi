@@ -27,9 +27,10 @@ function ScoreBar({ value, icon: Icon }: { value: number; icon: any }) {
   )
 }
 
-function ClipCard({ clip, videoFile, suggestedMusic, onApprove, onReject }: {
+function ClipCard({ clip, videoFile, localFilename, suggestedMusic, onApprove, onReject }: {
   clip: Clip
-  videoFile: File
+  videoFile: File | null
+  localFilename?: string
   suggestedMusic?: string
   onApprove: () => void
   onReject: () => void
@@ -45,6 +46,7 @@ function ClipCard({ clip, videoFile, suggestedMusic, onApprove, onReject }: {
         <ClipDetailModal
           clip={clip}
           videoFile={videoFile}
+          localFilename={localFilename}
           suggestedMusic={suggestedMusic}
           onClose={() => setDetailOpen(false)}
           onApprove={onApprove}
@@ -52,7 +54,7 @@ function ClipCard({ clip, videoFile, suggestedMusic, onApprove, onReject }: {
         />
       )}
       {exporting && (
-        <LayoutPicker clip={clip} videoFile={videoFile} suggestedMusic={suggestedMusic} onClose={() => setExporting(false)} />
+        <LayoutPicker clip={clip} videoFile={videoFile} localFilename={localFilename} suggestedMusic={suggestedMusic} onClose={() => setExporting(false)} />
       )}
 
       <div className={cn(
@@ -203,6 +205,7 @@ export function ClipsGrid({ projects, onProjectClipsChange, onProceed, onAddVide
                   key={clip.id}
                   clip={clip}
                   videoFile={project.videoFile}
+                  localFilename={project.localFilename}
                   suggestedMusic={project.theme?.music_suggestion}
                   onApprove={() => onProjectClipsChange(project.id, project.clips.map((c) => c.id === clip.id ? { ...c, status: 'APPROVED' as const } : c))}
                   onReject={() => onProjectClipsChange(project.id, project.clips.map((c) => c.id === clip.id ? { ...c, status: 'REJECTED' as const } : c))}

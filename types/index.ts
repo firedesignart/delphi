@@ -41,7 +41,8 @@ export interface VideoTheme {
 export interface VideoProject {
   id: string
   title: string
-  videoFile: File
+  videoFile: File | null
+  localFilename?: string
   clips: Clip[]
   theme?: VideoTheme
 }
