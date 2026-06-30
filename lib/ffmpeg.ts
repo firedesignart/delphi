@@ -3,6 +3,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
 import type { VideoLayout, Transition } from '@/components/layout-picker'
+import { buildDynamicCropXExpr, type FaceTrackPoint } from './face-tracking'
 
 let ffmpeg: FFmpeg | null = null
 let loaded = false
@@ -100,7 +101,14 @@ function buildCaptionFilter(transcript: string, clipDuration: number, outH: numb
   return parts.join(',')
 }
 
-function buildVideoFilter(layout: VideoLayout, w: number, h: number, duration: number, transition: Transition): string {
+function buildVideoFilter(
+  layout: VideoLayout,
+  w: number,
+  h: number,
+  duration: number,
+  transition: Transition,
+  faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number }
+): string {
   const fadeDur = 0.4
   let base = ''
   switch (layout) {
@@ -111,6 +119,16 @@ function buildVideoFilter(layout: VideoLayout, w: number, h: number, duration: n
     case 'letterbox':
       base = `scale=${w}:-2:flags=lanczos,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`
       break
+    case 'auto': {
+      if (!faceTrack) {
+        base = `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`
+        break
+      }
+      const scaledWidth = Math.round((faceTrack.videoWidth / faceTrack.videoHeight) * h)
+      const cropXExpr = buildDynamicCropXExpr(faceTrack.points, scaledWidth, w)
+      base = `scale=${scaledWidth}:${h}:flags=lanczos,crop=${w}:${h}:x='${cropXExpr}':y=0`
+      break
+    }
     case 'split':
       return ''
   }
@@ -130,7 +148,8 @@ export async function cutVideoClip(
   outputSize: { width: number; height: number } = { width: 1080, height: 1920 },
   burnTranscript?: string,
   onProgress?: (p: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  faceTrack?: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number }
 ): Promise<Blob> {
   const ff = await loadFFmpeg()
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -200,9 +219,9 @@ export async function cutVideoClip(
           '-movflags', '+faststart', outputName,
         ]
   } else {
-    let vf = buildVideoFilter(layout, W, H, duration, transition)
+    let vf = buildVideoFilter(layout, W, H, duration, transition, faceTrack)
     if (captionFilter) vf = vf ? `${vf},${captionFilter}` : captionFilter
-    const needsEncode = layout === 'fill' || transition !== 'none' || hasMusicFile || !!captionFilter
+    const needsEncode = layout === 'fill' || layout === 'auto' || transition !== 'none' || hasMusicFile || !!captionFilter
 
     if (hasMusicFile) {
       args = [

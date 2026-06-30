@@ -1,11 +1,12 @@
 'use client'
 import { useState, useRef } from 'react'
-import { X, Download, Loader2, Music, Zap, Type } from 'lucide-react'
+import { X, Download, Loader2, Music, Zap, Type, ScanFace } from 'lucide-react'
 import type { Clip } from '@/types'
 import { cutVideoClip } from '@/lib/ffmpeg'
+import { trackFaces, type FaceTrackPoint } from '@/lib/face-tracking'
 import { formatDuration, cn } from '@/lib/utils'
 
-export type VideoLayout = 'fill' | 'letterbox' | 'split'
+export type VideoLayout = 'fill' | 'letterbox' | 'split' | 'auto'
 export type Transition = 'none' | 'fade' | 'dissolve'
 export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9'
 
@@ -17,7 +18,8 @@ const ASPECT_RATIOS: { id: AspectRatio; label: string; w: number; h: number }[] 
 ]
 
 const LAYOUTS: { id: VideoLayout; label: string; desc: string }[] = [
-  { id: 'fill', label: 'Preenchido', desc: 'Tela toda, bordas cortadas' },
+  { id: 'auto', label: 'Seguir Rosto (IA)', desc: 'Rastreia e centraliza quem fala' },
+  { id: 'fill', label: 'Preenchido', desc: 'Tela toda, crop central fixo' },
   { id: 'letterbox', label: 'Com Barras', desc: 'Vídeo original, barras pretas' },
   { id: 'split', label: 'Split Screen', desc: 'Vídeo em cima e embaixo' },
 ]
@@ -54,13 +56,14 @@ interface LayoutPickerProps {
 
 export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose }: LayoutPickerProps) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16')
-  const [layout, setLayout] = useState<VideoLayout>('fill')
+  const [layout, setLayout] = useState<VideoLayout>('auto')
   const [transition, setTransition] = useState<Transition>('fade')
   const [musicGenre, setMusicGenre] = useState<string>(suggestedMusic !== 'none' ? suggestedMusic : 'none')
   const [captions, setCaptions] = useState(true)
   const [burnCaptions, setBurnCaptions] = useState(true)
   const [cutting, setCutting] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [stage, setStage] = useState<'tracking' | 'exporting'>('exporting')
   const abortRef = useRef<AbortController | null>(null)
 
   const isVertical = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '1:1'
@@ -78,6 +81,22 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
 
       const ratio = ASPECT_RATIOS.find((r) => r.id === aspectRatio)!
 
+      let faceTrack: { points: FaceTrackPoint[]; videoWidth: number; videoHeight: number } | undefined
+      if (layout === 'auto') {
+        setStage('tracking')
+        const video = document.createElement('video')
+        video.src = URL.createObjectURL(videoFile)
+        await new Promise<void>((resolve) => { video.onloadedmetadata = () => resolve() })
+        const videoWidth = video.videoWidth
+        const videoHeight = video.videoHeight
+        URL.revokeObjectURL(video.src)
+
+        const points = await trackFaces(videoFile, clip.startTime, clip.endTime, setProgress)
+        faceTrack = { points, videoWidth, videoHeight }
+        setStage('exporting')
+        setProgress(0)
+      }
+
       const blob = await cutVideoClip(
         videoFile,
         clip.startTime,
@@ -88,7 +107,8 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
         { width: ratio.w, height: ratio.h },
         burnCaptions ? clip.transcript : undefined,
         setProgress,
-        ctrl.signal
+        ctrl.signal,
+        faceTrack
       )
 
       const url = URL.createObjectURL(blob)
@@ -154,12 +174,15 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
           {isVertical && (
             <div>
               <p className="text-sm font-medium text-[#111] mb-3">Enquadramento</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {LAYOUTS.map((l) => (
                   <button key={l.id} onClick={() => setLayout(l.id)}
-                    className={cn('rounded-xl border-2 px-2 py-2.5 text-left transition-all', layout === l.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
-                    <p className={cn('text-xs font-medium', layout === l.id ? 'text-white' : 'text-[#111]')}>{l.label}</p>
-                    <p className={cn('text-[10px] mt-0.5', layout === l.id ? 'text-white/60' : 'text-[#999]')}>{l.desc}</p>
+                    className={cn('rounded-xl border-2 px-3 py-2.5 text-left transition-all flex items-start gap-2', layout === l.id ? 'border-[#111] bg-[#111]' : 'border-[#e5e5e5] hover:border-[#ccc]')}>
+                    {l.id === 'auto' && <ScanFace size={14} className={cn('mt-0.5 shrink-0', layout === l.id ? 'text-white' : 'text-[#888]')} />}
+                    <div>
+                      <p className={cn('text-xs font-medium', layout === l.id ? 'text-white' : 'text-[#111]')}>{l.label}</p>
+                      <p className={cn('text-[10px] mt-0.5', layout === l.id ? 'text-white/60' : 'text-[#999]')}>{l.desc}</p>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -229,7 +252,10 @@ export function LayoutPicker({ clip, videoFile, suggestedMusic = 'none', onClose
           {cutting && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-[#555] flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Exportando…</span>
+                <span className="text-[#555] flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" />
+                  {stage === 'tracking' ? 'Rastreando rosto…' : 'Exportando…'}
+                </span>
                 <span className="font-medium">{progress}%</span>
               </div>
               <div className="h-1.5 bg-[#eee] rounded-full overflow-hidden">
